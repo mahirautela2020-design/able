@@ -36,6 +36,15 @@ run_phase() {
     || log "  ⚠ researcher non-zero exit (check build-logs/researcher-$KEY.log)"
   [ -f "docs/phase-reports/${KEY}-TASKS.md" ] && log "  ✅ researcher: TASKS + RISKS written" || log "  ⚠ researcher produced no TASKS — continuing with spec only"
 
+  # ── 1.5 CREATE PHASE BRANCH (before builder — keeps PRs non-cumulative) ──
+  if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+    git checkout "$BRANCH" >> build-logs/git-$KEY.log 2>&1
+    log "  [git] using existing branch $BRANCH"
+  else
+    git checkout -b "$BRANCH" >> build-logs/git-$KEY.log 2>&1
+    log "  [git] created branch $BRANCH from main"
+  fi
+
   # ── 2+3. BUILDER loop (max 5 attempts) ──
   local attempt=1
   while [ "$attempt" -le 5 ]; do
