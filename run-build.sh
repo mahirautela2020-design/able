@@ -31,8 +31,8 @@ run_phase() {
 
   # ── 1. RESEARCHER (glm-5.2) ──
   log "  [researcher] analyzing $SPEC → TASKS + RISKS"
-  opencode run "You are the RESEARCHER for Able. Read ORCHESTRATOR.md, AGENTS/researcher.md, $SPEC, PRODUCT_BLUEPRINT.md, ENTERPRISE_SPEC.md, AGENTS.md. Execute the researcher role for phase $KEY: write docs/phase-reports/${KEY}-TASKS.md and docs/phase-reports/${KEY}-RISKS.md. Follow AGENTS/researcher.md exactly." \
-    --model "$RESEARCHER_MODEL" -f ORCHESTRATOR.md -f AGENTS/researcher.md -f "$SPEC" >> build-logs/researcher-$KEY.log 2>&1 \
+  opencode run "You are the RESEARCHER for Able phase $KEY. YOUR FIRST ACTION: use the write_file tool to create docs/phase-reports/${KEY}-TASKS.md (numbered task checklist for this phase per $SPEC and ORCHESTRATOR.md section 4) and docs/phase-reports/${KEY}-RISKS.md (risks + mitigations). WRITE THE FILES FIRST — do not stop to read long specs first; keep each file under 60 lines. Then reply DONE." \
+    --model "$RESEARCHER_MODEL" -f ORCHESTRATOR.md -f AGENTS/researcher.md >> build-logs/researcher-$KEY.log 2>&1 \
     || log "  ⚠ researcher non-zero exit (check build-logs/researcher-$KEY.log)"
   [ -f "docs/phase-reports/${KEY}-TASKS.md" ] && log "  ✅ researcher: TASKS + RISKS written" || log "  ⚠ researcher produced no TASKS — continuing with spec only"
 
