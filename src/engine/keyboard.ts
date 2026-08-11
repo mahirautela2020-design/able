@@ -102,8 +102,13 @@ export async function runKeyboard(
 
       if (activeInfo.tag === "body") {
         if (visitedElements.length === 0) {
-          result.deadEndBeforeCompletion = true;
+          // Fresh page: focus starts on body. Press Tab once to enter the
+          // page's focus order, then continue recording.
+          await page.keyboard.press("Tab");
+          await page.waitForTimeout(50);
+          continue;
         }
+        // Focus left the document (wrapped past the last focusable) — cycle done.
         break;
       }
 
@@ -210,26 +215,21 @@ function detectFocusTrap(
   sequence: string[],
   fullFocusableCount: number
 ): boolean {
-  if (sequence.length < 3 || fullFocusableCount <= 2) return false;
+  if (sequence.length < 4 || fullFocusableCount <= 2) return false;
 
   const visited = new Set(sequence);
   if (visited.size >= fullFocusableCount) return false;
 
-  for (let i = 0; i < sequence.length - 1; i++) {
-    const remaining = sequence.slice(i + 1);
-    const idx = remaining.indexOf(sequence[i]);
-    if (idx !== -1) {
-      const subSequence = sequence.slice(i, i + idx + 2);
-      const subSet = new Set(subSequence);
-      if (subSet.size < fullFocusableCount) {
-        const allSeenAfter = new Set(sequence.slice(i + idx + 2));
-        const unseenInSub = [...subSet].filter(
-          (s) => !allSeenAfter.has(s)
-        );
-        if (unseenInSub.length > 0) {
-          return true;
-        }
-      }
+  // Strict sub-cycle detection: if the tail of the sequence repeats with a
+  // fixed period AND the visited set never covered all focusables, focus is
+  // cycling inside a subset — a trap. (Modal dialogs legitimately trap focus;
+  // the finding routes to needs_review, never to fail.)
+  const half = Math.floor(sequence.length / 2);
+  for (let p = 1; p <= half; p++) {
+    const tail = sequence.slice(sequence.length - p);
+    const prev = sequence.slice(sequence.length - 2 * p, sequence.length - p);
+    if (tail.join("\u0000") === prev.join("\u0000")) {
+      return true;
     }
   }
 

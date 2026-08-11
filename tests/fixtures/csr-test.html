@@ -1,20 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>Test Page</title></head>
+<head><meta charset="UTF-8"><title>CSR Test App — hydrates after 1.5s</title></head>
 <body>
   <div id="root"></div>
   <script>
+    // Client-side render after 1.5s — like a React/Next hydration delay.
+    // Deliberate violations: image-alt ×3 (incl. link w/ image), label ×2,
+    // button-name ×2, color-contrast, link-name (image-only link).
     setTimeout(() => {
       document.getElementById('root').innerHTML = `
         <h1>Welcome</h1>
-        <img src="photo.jpg">
-        <a href="/about">Click here</a>
-        <input type="text">
-        <div style="color: #ccc; background: #fff;">Low contrast text</div>
-        <button></button>
-        <div role="button">Save</div>
-        <select></select>
-        <a href="/more">More info</a>
+        <nav>
+          <a href="/home">Home</a>
+          <a href="/"><img src="logo.png" width="40" height="40"></a>
+        </nav>
+        <main>
+          <img src="photo1.jpg" width="200" height="150">
+          <img src="photo2.jpg" width="200" height="150">
+          <div style="color:#9ca3af;background:#fff;">Low contrast text (fails AA)</div>
+          <button class="icon-btn">&#9776;</button>
+          <button class="icon-btn">&#10005;</button>
+          <button>Save</button>
+          <input type="text" placeholder="Search">
+          <input type="checkbox">
+          <select></select>
+        </main>
       `;
     }, 1500);
   </script>
