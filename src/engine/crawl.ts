@@ -1,4 +1,3 @@
-import { promises as dnsPromises } from "dns";
 import type { Page } from "playwright-core";
 import { withPage } from "./browser";
 
@@ -84,7 +83,20 @@ export async function validateHost(hostname: string): Promise<void> {
   }
 
   try {
-    const addresses = await dnsPromises.resolve4(hostname);
+    // Use dns.lookup (OS resolver) instead of dnsPromises.resolve4:
+    // resolve4 queries DNS servers directly on port 53, which corporate
+    // networks/firewalls often refuse (ECONNREFUSED on this dev machine).
+    // lookup uses the OS resolver (getaddrinfo) — works on Windows, honors
+    // hosts file, and still returns the IP for private-range checks.
+    const { lookup } = await import("node:dns");
+    const addresses = await new Promise<string[]>((resolve, reject) => {
+      lookup(hostname, { all: true }, (err, addrs) =>
+        err ? reject(err) : resolve(addrs.map((a) => a.address))
+      );
+    });
+    if (addresses.length === 0) {
+      throw new Error(`DNS_RESOLVE_FAILED: ${hostname}`);
+    }
     for (const addr of addresses) {
       if (isPrivateIp(addr)) {
         throw new Error(`SSRF_BLOCKED: ${hostname} -> ${addr}`);
