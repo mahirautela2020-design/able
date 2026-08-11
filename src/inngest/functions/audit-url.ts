@@ -5,6 +5,8 @@ import { runAxe } from "@/engine/axe-scan";
 import { runKeyboard } from "@/engine/keyboard";
 import { crawl, isBotBlocked } from "@/engine/crawl";
 import { computeComplianceMatrix, buildProgress } from "@/engine/normalize";
+import { captureAriaSnapshot } from "@/lib/sr/snapshot";
+import { captureLiveAnnouncements } from "@/lib/sr/announcer";
 import {
   updateAuditStatus,
   updateAuditProgress,
@@ -83,6 +85,42 @@ export const auditUrl = inngest.createFunction(
 
           const allFindingsForPage = [...findings, ...keyboardResult.findings];
 
+          let srSnapshot = null;
+          let srAnnouncements: Array<{ text: string; timestamp: number; source: string }> = [];
+          try {
+            srSnapshot = await captureAriaSnapshot(page);
+          } catch {
+            // SR snapshot capture is best-effort
+          }
+          try {
+            srAnnouncements = await captureLiveAnnouncements(page);
+          } catch {
+            // SR announcements capture is best-effort
+          }
+
+          const srEvidence: Record<string, unknown> = {};
+          try {
+            if (srSnapshot) {
+              const snapshotJson = Buffer.from(JSON.stringify(srSnapshot), "utf-8");
+              const snapshotPath = `evidence/sr/${auditId}/${i}/snapshot.json`;
+              const snapshotUrl = await uploadEvidence(snapshotJson, snapshotPath, "application/json");
+              srEvidence.srSnapshotUrl = snapshotUrl;
+            }
+          } catch {
+            // Best-effort upload
+          }
+          try {
+            if (srAnnouncements.length > 0) {
+              const announcementsJson = Buffer.from(JSON.stringify(srAnnouncements), "utf-8");
+              const announcementsPath = `evidence/sr/${auditId}/${i}/announcements.json`;
+              const announcementsUrl = await uploadEvidence(announcementsJson, announcementsPath, "application/json");
+              srEvidence.srAnnouncementsUrl = announcementsUrl;
+              srEvidence.srAnnouncementCount = srAnnouncements.length;
+            }
+          } catch {
+            // Best-effort upload
+          }
+
             pageId = await insertAuditPage({
               audit_id: auditId,
               page_url: finalUrl,
@@ -94,7 +132,7 @@ export const auditUrl = inngest.createFunction(
               settled_at_ms: null,
               networkidle_timed_out: telemetry.networkidleTimedOut,
               error_code: null,
-              evidence: { telemetry, keyboardCount: keyboardResult.focusableCount },
+              evidence: { telemetry, keyboardCount: keyboardResult.focusableCount, sr: srEvidence },
               scanned_at: new Date().toISOString(),
             });
 
