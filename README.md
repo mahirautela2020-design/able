@@ -1,36 +1,72 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Able — Enterprise Accessibility Auditor
 
-## Getting Started
+**Make the web work for everyone.**
 
-First, run the development server:
+Able audits websites against the full WCAG 2.2 success criteria (A/AA/AAA) with
+deterministic, evidence-first findings — every issue backed by a rule ID, the exact
+success criterion, a DOM selector, and a screenshot crop. Runs on open-source engines
+(axe-core, Playwright, colorjs.io) — no paid APIs, no LLM-generated findings.
+
+## Status
+
+**P0 (engine core) — built.** URL audits end-to-end: submit a URL → crawl (≤5 pages) →
+settle-then-scan with axe-core → keyboard behavior walkthrough (focus order, traps,
+visibility, skip links) → findings mapped to the WCAG 2.2 SC registry (86 criteria) →
+annotated compliance report with evidence.
+
+## Stack
+
+- **Next.js 16** (App Router) + **shadcn/ui** — web app & report UI
+- **Supabase** (free tier) — Postgres + private evidence storage (signed URLs)
+- **Inngest** (free tier) — background queue, one step per page (Vercel 60s-safe)
+- **@sparticuz/chromium + Playwright** — headless browsing on Vercel
+- **axe-core 4.13** (from node_modules, no CDN) — the industry-standard engine
+- **colorjs.io** — contrast math (P1+)
+
+## Key design decisions
+
+- **Settle before scan** — pages are scanned only after content signal + network
+  idle + fonts loaded. Never at `domcontentloaded` (the accuracy bug that sinks most
+  homegrown auditors on JS-rendered sites).
+- **Evidence-first** — a finding without ruleId + criterion + selector + screenshot
+  crop is not a finding. Every finding maps to ≥1 SC via the installed axe-core's own
+  rule metadata (programmatic, version-locked — never hand-written).
+- **Honest buckets** — `automated` / `needs_review` (axe `incomplete`, gradients,
+  focus traps — the human-judgment layer) / `behavior` (keyboard) / `best-practice`.
+- **No LLM in the scan path** — P0 is 100% deterministic. AI (when it arrives) only
+  explains engine-verified findings, never creates them.
+- **SSRF-safe crawling** — private/loopback ranges rejected, post-redirect
+  re-validation, IP rate limiting, bot-wall detection.
+
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.local.example .env.local   # fill in Supabase + Inngest keys
+npm run inngest:dev                # local queue
+npm run dev                        # app on :3000
+npm run verify                     # lint + typecheck + test + build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Supabase: run the schema from `P0_BUILD_PROMPT.md` §4 in the SQL editor, enable RLS
+on all tables (zero policies), create a **private** `evidence` bucket.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Roadmap
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Phase | Scope |
+|---|---|
+| P0 ✅ | Engine core: settle-scan, WCAG registry, keyboard walkthrough, annotated report |
+| P1 | Explore workbench: live session, element inspector, live contrast fixes, color-blind overlays |
+| P2 | Module selector, portal sessions, needs-review UI, multi-viewport, regulation mapping |
+| P3 | Figma + image modes |
+| P4 | APK static, code/repo audit |
+| P5 | Screen readers (NVDA out-of-process), maturity scoring, ACR/VPAT |
+| P6 | Enterprise shell: SSO, RBAC, multi-tenant, API, MCP plugin framework |
 
-## Learn More
+Spec docs for every phase live in this repo (`PRODUCT_BLUEPRINT.md`,
+`ENTERPRISE_SPEC.md`, `WORKBENCH_VISION.md`, `P0_BUILD_PROMPT.md`).
 
-To learn more about Next.js, take a look at the following resources:
+## License
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Proprietary — personal portfolio project. (Specs in this repo describe the product
+and its build plan; code is not yet licensed for external use.)

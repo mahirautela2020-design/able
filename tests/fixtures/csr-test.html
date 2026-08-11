@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Test Page</title></head>
+<body>
+  <div id="root"></div>
+  <script>
+    setTimeout(() => {
+      document.getElementById('root').innerHTML = `
+        <h1>Welcome</h1>
+        <img src="photo.jpg">
+        <a href="/about">Click here</a>
+        <input type="text">
+        <div style="color: #ccc; background: #fff;">Low contrast text</div>
+        <button></button>
+        <div role="button">Save</div>
+        <select></select>
+        <a href="/more">More info</a>
+      `;
+    }, 1500);
+  </script>
+</body>
+</html>
