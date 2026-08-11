@@ -19,7 +19,7 @@
                                     ▼
         ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
         │  RESEARCHER  │ ───► │   BUILDER    │ ───► │  VERIFIER    │
-        │  (kimi-k3)   │      │ (deepseek-   │      │ (shell —     │
+        │  (glm-5.2)  │      │ (deepseek-   │      │ (shell —     │
         │  spec →      │      │  v4-pro)     │      │  deterministic│
         │  TASKS+RISKS │      │  implements  │      │  gates)      │
         └──────────────┘      └──────┬───────┘      └──────┬───────┘
@@ -52,7 +52,7 @@
 ## 3. The loop (per phase, inside run-build.sh)
 
 ```
-1. RESEARCH   — kimi-k3 reads the phase spec → writes TASKS + RISKS (≤5 min)
+1. RESEARCH   — glm-5.2 reads the phase spec → writes TASKS + RISKS (≤5 min)
 2. BUILD      — deepseek-v4-pro implements, guided by TASKS/RISKS (10–30 min)
 3. VERIFY     — verifier.sh: npm run verify + browser tests (2–4 min)
    ├─ GREEN → go to 5

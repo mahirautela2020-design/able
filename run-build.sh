@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run-build.sh — Able multi-agent orchestrator (ONE command to run the whole graph)
 # Usage: bash run-build.sh [phase-key]     (no arg = run P1→P6)
-# Roles: researcher (kimi-k3) → builder (deepseek-v4-pro) → verifier (gates) → pr-riser (git+gh)
+# Roles: researcher (glm-5.2) → builder (deepseek-v4-pro) → verifier (gates) → pr-riser (git+gh)
 set -u
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
@@ -29,7 +29,7 @@ run_phase() {
   local KEY="$1" SPEC="$2" BRANCH="$3" TITLE="$4"
   log "════════ PHASE $KEY ════════"
 
-  # ── 1. RESEARCHER (kimi-k3) ──
+  # ── 1. RESEARCHER (glm-5.2) ──
   log "  [researcher] analyzing $SPEC → TASKS + RISKS"
   opencode run "You are the RESEARCHER for Able. Read ORCHESTRATOR.md, AGENTS/researcher.md, $SPEC, PRODUCT_BLUEPRINT.md, ENTERPRISE_SPEC.md, AGENTS.md. Execute the researcher role for phase $KEY: write docs/phase-reports/${KEY}-TASKS.md and docs/phase-reports/${KEY}-RISKS.md. Follow AGENTS/researcher.md exactly." \
     --model "$RESEARCHER_MODEL" -f ORCHESTRATOR.md -f AGENTS/researcher.md -f "$SPEC" >> build-logs/researcher-$KEY.log 2>&1 \
