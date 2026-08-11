@@ -15,6 +15,21 @@ echo "===== VERIFY $PHASE_KEY $(date '+%F %T') =====" | tee -a "$LOG"
 fail() { echo "❌ $1" | tee -a "$LOG"; exit 1; }
 pass() { echo "✅ $1" | tee -a "$LOG"; }
 
+# Gate 0: the phase must have ACTUAL commits vs main — a no-op build FAILS.
+# (This catches the bug where an unchanged repo passes all other gates.)
+echo "--- Gate 0: branch has real changes vs main ---" | tee -a "$LOG"
+CURRENT_BRANCH=$(git branch --show-current)
+if [ "$CURRENT_BRANCH" = "main" ]; then
+  fail "Gate 0 FAILED: on main — verifier must run on the phase branch"
+fi
+COMMIT_COUNT=$(git rev-list --count main..HEAD 2>/dev/null || echo 0)
+if [ "$COMMIT_COUNT" -eq 0 ]; then
+  fail "Gate 0 FAILED: 0 commits vs main — the builder produced NOTHING. (no-op builds must not pass)"
+fi
+DIFF_STAT=$(git diff --stat main...HEAD 2>/dev/null | tail -1)
+echo "ℹ $COMMIT_COUNT commit(s) vs main; $DIFF_STAT" | tee -a "$LOG"
+pass "Gate 0: branch has real changes"
+
 # Gate 1: full verify (lint + typecheck + tests + build)
 echo "--- Gate 1: npm run verify ---" | tee -a "$LOG"
 if ! npm run verify >> "$LOG" 2>&1; then
