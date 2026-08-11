@@ -1,0 +1,250 @@
+{
+  "audit": {
+    "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "target_url": "https://example.com",
+    "status": "complete",
+    "config": {
+      "modules": ["automated", "keyboard"],
+      "maxPages": 5
+    },
+    "progress": { "pagesTotal": 3, "pagesDone": 3 },
+    "report_path": null,
+    "error_code": null,
+    "error_detail": null,
+    "created_at": "2026-08-01T10:00:00Z",
+    "completed_at": "2026-08-01T11:00:00Z"
+  },
+  "scope_pages": [
+    {
+      "id": "page-001",
+      "audit_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "page_url": "https://example.com",
+      "page_title": "Example Homepage",
+      "status": "complete",
+      "wcag_score": 75.5,
+      "axe_version": "4.13.0",
+      "consent_dismissed": false,
+      "settled_at_ms": 1200,
+      "networkidle_timed_out": false,
+      "error_code": null,
+      "evidence": {},
+      "scanned_at": "2026-08-01T10:05:00Z"
+    },
+    {
+      "id": "page-002",
+      "audit_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "page_url": "https://example.com/about",
+      "page_title": "About Us",
+      "status": "complete",
+      "wcag_score": 82.0,
+      "axe_version": "4.13.0",
+      "consent_dismissed": true,
+      "settled_at_ms": 900,
+      "networkidle_timed_out": false,
+      "error_code": null,
+      "evidence": {},
+      "scanned_at": "2026-08-01T10:15:00Z"
+    },
+    {
+      "id": "page-003",
+      "audit_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "page_url": "https://example.com/contact",
+      "page_title": "Contact",
+      "status": "complete",
+      "wcag_score": 90.0,
+      "axe_version": "4.13.0",
+      "consent_dismissed": false,
+      "settled_at_ms": 800,
+      "networkidle_timed_out": false,
+      "error_code": null,
+      "evidence": {},
+      "scanned_at": "2026-08-01T10:25:00Z"
+    }
+  ],
+  "findings": [
+    {
+      "id": "find-001",
+      "audit_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "page_id": "page-001",
+      "bucket": "automated",
+      "rule_id": "color-contrast",
+      "rule_title": "Elements must meet minimum color contrast ratio thresholds",
+      "wcag_criteria": ["wcag143"],
+      "wcag_criterion": "1.4.3",
+      "wcag_level": "AA",
+      "principle": "Perceivable",
+      "severity": "serious",
+      "confidence": 0.9,
+      "source_engines": ["axe-core"],
+      "selector": "#hero .cta-button",
+      "element_html": "<button class=\"cta-button\" style=\"background:#ccc;color:#fff\">Click me</button>",
+      "failure_summary": "Fix any of the following: Element has insufficient color contrast of 3.2:1 (foreground color: #ffffff, background color: #cccccc, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "additional_instances": 2,
+      "screenshot_crop_url": null,
+      "full_screenshot_url": null,
+      "recommendation": "Darken text color to #595959 for AA compliance",
+      "evidence": { "target": ["#hero .cta-button"], "impact": "serious", "tags": ["wcag143"], "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/color-contrast" },
+      "engine_version": "4.13.0"
+    },
+    {
+      "id": "find-002",
+      "audit_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "page_id": "page-001",
+      "bucket": "automated",
+      "rule_id": "image-alt",
+      "rule_title": "Images must have alternate text",
+      "wcag_criteria": ["wcag111"],
+      "wcag_criterion": "1.1.1",
+      "wcag_level": "A",
+      "principle": "Perceivable",
+      "severity": "critical",
+      "confidence": 0.9,
+      "source_engines": ["axe-core"],
+      "selector": ".hero > img:first-child",
+      "element_html": "<img src=\"/hero-banner.jpg\" />",
+      "failure_summary": "Fix any of the following: Element does not have an alt attribute; aria-label attribute does not exist or is empty; aria-labelledby attribute does not exist",
+      "additional_instances": 0,
+      "screenshot_crop_url": null,
+      "full_screenshot_url": null,
+      "recommendation": "Add alt=\"Banner image showing product features\" to the img element",
+      "evidence": { "target": [".hero > img:first-child"], "impact": "critical", "tags": ["wcag111"], "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/image-alt" },
+      "engine_version": "4.13.0"
+    },
+    {
+      "id": "find-003",
+      "audit_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "page_id": "page-001",
+      "bucket": "automated",
+      "rule_id": "label",
+      "rule_title": "Form elements must have labels",
+      "wcag_criteria": ["wcag131"],
+      "wcag_criterion": "1.3.1",
+      "wcag_level": "A",
+      "principle": "Perceivable",
+      "severity": "moderate",
+      "confidence": 0.9,
+      "source_engines": ["axe-core"],
+      "selector": "#search-input",
+      "element_html": "<input type=\"text\" id=\"search-input\" placeholder=\"Search...\" />",
+      "failure_summary": "Fix any of the following: aria-label attribute does not exist or is empty; aria-labelledby attribute does not exist",
+      "additional_instances": 0,
+      "screenshot_crop_url": null,
+      "full_screenshot_url": null,
+      "recommendation": "Add a label element with for=\"search-input\" or add aria-label=\"Search\"",
+      "evidence": { "target": ["#search-input"], "impact": "moderate", "tags": ["wcag131"], "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/label" },
+      "engine_version": "4.13.0"
+    },
+    {
+      "id": "find-004",
+      "audit_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "page_id": "page-002",
+      "bucket": "automated",
+      "rule_id": "color-contrast",
+      "rule_title": "Elements must meet minimum color contrast ratio thresholds",
+      "wcag_criteria": ["wcag143"],
+      "wcag_criterion": "1.4.3",
+      "wcag_level": "AA",
+      "principle": "Perceivable",
+      "severity": "minor",
+      "confidence": 0.9,
+      "source_engines": ["axe-core"],
+      "selector": ".footer-text",
+      "element_html": "<p class=\"footer-text\" style=\"color:#999\">Copyright 2026</p>",
+      "failure_summary": "Element has insufficient color contrast of 2.8:1",
+      "additional_instances": 0,
+      "screenshot_crop_url": null,
+      "full_screenshot_url": null,
+      "recommendation": "Darken footer text to #767676 for AA compliance",
+      "evidence": { "target": [".footer-text"], "impact": "minor", "tags": ["wcag143"], "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/color-contrast" },
+      "engine_version": "4.13.0"
+    },
+    {
+      "id": "find-005",
+      "audit_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "page_id": "page-003",
+      "bucket": "needs_review",
+      "rule_id": "aria-allowed-role",
+      "rule_title": "ARIA role must be appropriate for the element",
+      "wcag_criteria": ["wcag412"],
+      "wcag_criterion": "4.1.2",
+      "wcag_level": "A",
+      "principle": "Robust",
+      "severity": "serious",
+      "confidence": 0.5,
+      "source_engines": ["axe-core"],
+      "selector": "div[role=button]",
+      "element_html": "<div role=\"button\" tabindex=\"0\">Send Message</div>",
+      "failure_summary": "Needs review to determine if this element's role is appropriate",
+      "additional_instances": 0,
+      "screenshot_crop_url": null,
+      "full_screenshot_url": null,
+      "recommendation": "Review if this should be a <button> element instead",
+      "evidence": { "target": ["div[role=button]"], "impact": "serious", "tags": ["wcag412"], "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/aria-allowed-role" },
+      "engine_version": "4.13.0"
+    }
+  ],
+  "ax_snapshots": [
+    {
+      "id": "snap-001",
+      "page_id": "page-001",
+      "audit_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "snapshot": {
+        "name": "Example Homepage",
+        "role": "WebArea",
+        "children": [
+          {
+            "name": "Example Homepage",
+            "role": "banner",
+            "children": [
+              { "name": "Example Corp", "role": "link", "children": [] },
+              {
+                "name": "Navigation",
+                "role": "navigation",
+                "children": [
+                  { "name": "Home", "role": "link", "children": [] },
+                  { "name": "About", "role": "link", "children": [] },
+                  { "name": "Contact", "role": "link", "children": [] }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "",
+            "role": "main",
+            "children": [
+              {
+                "name": "Welcome",
+                "role": "heading",
+                "children": [],
+                "level": 1
+              },
+              {
+                "name": "Click me",
+                "role": "button",
+                "children": [],
+                "properties": { "invalid": false }
+              },
+              {
+                "name": "Search",
+                "role": "textbox",
+                "children": [],
+                "properties": { "required": false }
+              },
+              {
+                "name": "Features",
+                "role": "heading",
+                "children": [],
+                "level": 2
+              }
+            ]
+          },
+          {
+            "name": "Copyright 2026",
+            "role": "contentinfo",
+            "children": []
+          }
+        ]
+      }
+    }
+  ]
+}
