@@ -33,8 +33,8 @@ export function AuditList() {
   useEffect(() => {
     fetch("/api/audits")
       .then((r) => r.json())
-      .then(setAudits)
-      .catch(() => {})
+      .then((data) => setAudits(Array.isArray(data) ? data : []))
+      .catch(() => setAudits([]))
       .finally(() => setLoading(false));
   }, []);
 

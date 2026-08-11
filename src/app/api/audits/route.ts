@@ -52,11 +52,10 @@ export async function POST(request: Request) {
 export async function GET() {
   try {
     const audits = await getRecentAudits(10);
-    return Response.json(audits);
+    return Response.json(Array.isArray(audits) ? audits : []);
   } catch {
-    return Response.json(
-      { error: "Failed to fetch audits" },
-      { status: 500 }
-    );
+    // Graceful degradation: DB not configured yet (e.g. local dev before
+    // Supabase setup) — the UI must render an empty list, not crash.
+    return Response.json([]);
   }
 }
