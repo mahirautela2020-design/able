@@ -70,3 +70,4 @@ Spec docs for every phase live in this repo (`PRODUCT_BLUEPRINT.md`,
 
 Proprietary — personal portfolio project. (Specs in this repo describe the product
 and its build plan; code is not yet licensed for external use.)
+# gate0 recheck
