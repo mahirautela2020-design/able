@@ -52,13 +52,14 @@ run_phase() {
     local FEEDBACK=""
     [ -f build-logs/verify-$KEY.log ] && FEEDBACK="The previous verifier run FAILED. Fix exactly these failures: $(tail -60 build-logs/verify-$KEY.log)"
 
-    # Attach files ONLY if they exist — opencode hard-fails on missing -f files
-    local FILES="-f ORCHESTRATOR.md -f AGENTS/builder.md -f \"$SPEC\" -f AGENTS.md"
-    [ -f "docs/phase-reports/${KEY}-TASKS.md" ] && FILES="$FILES -f docs/phase-reports/${KEY}-TASKS.md"
-    [ -f "docs/phase-reports/${KEY}-RISKS.md" ] && FILES="$FILES -f docs/phase-reports/${KEY}-RISKS.md"
+    # Attach files ONLY if they exist — opencode hard-fails on missing -f files.
+    # Use a bash array so filenames never get mangled by quoting.
+    local FILES=(-f ORCHESTRATOR.md -f AGENTS/builder.md -f "$SPEC" -f AGENTS.md)
+    [ -f "docs/phase-reports/${KEY}-TASKS.md" ] && FILES+=(-f "docs/phase-reports/${KEY}-TASKS.md")
+    [ -f "docs/phase-reports/${KEY}-RISKS.md" ] && FILES+=(-f "docs/phase-reports/${KEY}-RISKS.md")
 
     opencode run "You are the BUILDER for Able. Read ORCHESTRATOR.md, AGENTS/builder.md, $SPEC, AGENTS.md. Execute the builder role for phase $KEY. ${FEEDBACK} Follow AGENTS/builder.md exactly: implement the phase per the spec, add tests, run npm run verify and the browser tests until green, then commit. IMPORTANT: you must actually change code — the verifier fails if your branch has no commits." \
-      --model "$BUILDER_MODEL" $FILES >> build-logs/builder-$KEY-$attempt.log 2>&1
+      --model "$BUILDER_MODEL" "${FILES[@]}" >> build-logs/builder-$KEY-$attempt.log 2>&1
     log "  [builder] attempt $attempt finished (log: build-logs/builder-$KEY-$attempt.log)"
 
     # ── VERIFIER (deterministic) ──
