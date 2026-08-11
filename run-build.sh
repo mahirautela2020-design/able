@@ -10,8 +10,8 @@ RUN_LOG="build-logs/run.log"
 CHROME="C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 # ── models (opencode-go provider — the only working one on this machine) ──
-RESEARCHER_MODEL="opencode-go/kimi-k3"
-BUILDER_MODEL="opencode-go/deepseek-v4-pro"
+RESEARCHER_MODEL="opencode-go/glm-5.2"       # analysis only — cheap + strong (was kimi-k3)
+BUILDER_MODEL="opencode-go/deepseek-v4-pro"  # implementation — quality matters most
 
 log() { echo "[$(date '+%F %T')] $1" | tee -a "$RUN_LOG"; }
 

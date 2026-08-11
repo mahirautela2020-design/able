@@ -44,7 +44,7 @@
 
 | Role | Tool | Input → Output | Files |
 |---|---|---|---|
-| **Researcher** | `opencode run` + **kimi-k3** | phase spec (WORKBENCH_VISION / ENTERPRISE_SPEC / BLUEPRINT) → `docs/phase-reports/PX-TASKS.md` (task checklist) + `PX-RISKS.md` (what could break) | `AGENTS/researcher.md` |
+| **Researcher** | `opencode run` + **glm-5.2** (cheap, strong analysis — was kimi-k3) | phase spec (WORKBENCH_VISION / ENTERPRISE_SPEC / BLUEPRINT) → `docs/phase-reports/PX-TASKS.md` (task checklist) + `PX-RISKS.md` (what could break) | `AGENTS/researcher.md` |
 | **Builder** | `opencode run` + **deepseek-v4-pro** | phase spec + TASKS + RISKS (+ verifier failure output on retry) → implemented code, tests added | `AGENTS/builder.md` |
 | **Verifier** | bash script (no LLM) | repo state → GREEN/FAIL (exit code) — `npm run verify` + browser tests with Chrome + phase gates | `AGENTS/verifier.sh` |
 | **PR-raiser** | git + gh (no LLM) | green repo → `phase/pX-<name>` branch, commit, push, PR into `main` | `AGENTS/pr-riser.sh` |
@@ -93,10 +93,10 @@
 
 ## 7. Cost & runtime estimate (whole run, P1→P6)
 
-- Researcher: kimi-k3 × 5 phases ≈ $3–8
+- Researcher: glm-5.2 × 5 phases ≈ $1–3
 - Builder: deepseek-v4-pro × ~10–18 sessions (incl. retries) ≈ $15–45
 - Verifier/PR: $0 (shell)
-- **Total ≈ $20–55 · wall-clock ≈ 2–4 hours** (run `bash run-build.sh` in background;
+- **Total ≈ $16–48 · wall-clock ≈ 2–4 hours** (run `bash run-build.sh` in background;
   check `build-logs/run.log` for progress; PRs appear on GitHub as each phase lands)
 
 ## 8. After the run finishes
