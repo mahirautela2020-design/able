@@ -1,10 +1,10 @@
 import { serve } from "inngest/next";
 import { inngest } from "@/inngest/client";
-import { auditUrl } from "@/inngest/functions/audit-url";
+import { functions } from "@/inngest/functions";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [auditUrl],
+  functions,
 });
 
 export const maxDuration = 60;
