@@ -205,7 +205,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
               No criteria under this principle and level.
             </p>
           )}
-          {principleScs.map(({ sc, count, worst, status }) => (
+          {principleScs.map(({ sc, count, status }) => (
             <button
               key={sc.id}
               onClick={() => setActiveSc(activeSc === sc.id ? null : sc.id)}

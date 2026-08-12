@@ -1,4 +1,4 @@
-import { getAudit, getFindingsForAudit, createSignedUrl, supabase } from "@/lib/supabase/server";
+import { supabase, createSignedUrl } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
 import { buildReportHtml } from "@/lib/report";
 
@@ -25,8 +25,6 @@ export async function GET(
     // Isolation: PDF exports are private — a valid session is required.
     const auth = await requireSession(request);
     if (!auth.ok) return auth.response;
-
-    const audit = await getAudit(id);
 
     // Regenerate the report HTML from the DB (same builder the pipeline uses)
     const html = await buildReportHtml(id);

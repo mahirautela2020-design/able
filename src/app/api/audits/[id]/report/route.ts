@@ -1,4 +1,4 @@
-import { getAudit, getFindingsForAudit, createSignedUrl, supabase } from "@/lib/supabase/server";
+import { getAudit, getFindingsForAudit, createSignedUrl } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
 
 export async function GET(
