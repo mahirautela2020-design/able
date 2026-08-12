@@ -160,6 +160,42 @@ describe("nvda-snapshot (browser)", () => {
     },
   );
 
+  it.skipIf(!hasChrome)(
+    "preserves password accessible names and never exposes values",
+    async () => {
+      const result = await withPage(async (page) => {
+        await page.goto(fixtureUrl("password-test.html"), {
+          waitUntil: "domcontentloaded",
+          timeout: 20_000,
+        });
+        return captureNvdaAnnouncements(page);
+      });
+
+      // No secret may leak into any captured name or spoken string (RISKS §10).
+      const dump = result.announcements
+        .map((a) => `${a.name ?? ""} ${a.spoken}`)
+        .join(" ");
+      expect(dump).not.toContain("s3cret-value");
+
+      // A labelled password field announces its accessible name, so it must NOT
+      // be flagged as silent (guardrail: only provably-silent → findings).
+      const labelled = result.announcements.find(
+        (a) => a.element === "#pwd-labeled"
+      );
+      expect(labelled).toBeDefined();
+      expect(labelled!.name).toBe("Enter password");
+
+      const checks = runNvdaChecks(result.announcements);
+      expect(
+        checks.silentElements.some((s) => s.element === "#pwd-labeled")
+      ).toBe(false);
+      // An unlabelled password field genuinely has no accessible name.
+      expect(checks.silentElements.some((s) => s.element === "#pwd-bare")).toBe(
+        true
+      );
+    },
+  );
+
   it.skipIf(
     !hasChrome || process.env.P7_NVDA_E2E !== "1" || !detectNvda().available
   )(

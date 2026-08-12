@@ -78,7 +78,12 @@ export async function captureNvdaAnnouncements(
           }
           if (!name && tag === "img") name = el.getAttribute("alt") ?? "";
           if (!name && el instanceof HTMLInputElement) {
-            name = el.getAttribute("placeholder") ?? el.value ?? "";
+            // Never read `.value` for a password field: the value is the secret
+            // (RISKS §10). Its accessible name comes only from a label, which is
+            // not sensitive — the name must be preserved so the field is not
+            // falsely reported as silent.
+            name = el.getAttribute("placeholder") ?? "";
+            if (!name && !isPassword) name = el.value ?? "";
           }
           if (!name && (tag === "a" || tag === "button" || tag === "summary")) {
             name = (el.textContent ?? "").trim();
@@ -176,7 +181,7 @@ export async function captureNvdaAnnouncements(
         at: Date.now(),
         element: f.selector,
         role: f.role,
-        name: f.isPassword ? null : f.name,
+        name: f.name,
         level: f.level,
         spoken,
       });
