@@ -119,7 +119,7 @@ export function AuthForm() {
               <Button
                 type="button"
                 variant="link"
-                className="px-1 h-auto text-sm"
+                className="px-1 h-auto text-sm whitespace-nowrap"
                 onClick={() => setMode("signup")}
               >
                 Create a free account
@@ -131,7 +131,7 @@ export function AuthForm() {
               <Button
                 type="button"
                 variant="link"
-                className="px-1 h-auto text-sm"
+                className="px-1 h-auto text-sm whitespace-nowrap"
                 onClick={() => setMode("signin")}
               >
                 Sign in
