@@ -1,5 +1,5 @@
 import { sanitizeUrl, validateHost } from "@/engine/crawl";
-import { insertAudit, getRecentAudits, deleteAudit, countAuditsByIp } from "@/lib/supabase/server";
+import { insertAudit, getRecentAudits, deleteAudit, countAuditsByIp, getAudit } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
 import { inngest } from "@/inngest/client";
 
@@ -105,15 +105,34 @@ function getClientIp(request: Request): string | null {
 }
 
 export async function DELETE(request: Request) {
-  // Destructive operation — require a valid session (enterprise-grade).
+  // Destructive but owner-scoped: signed-in users delete their own audits;
+  // anonymous users may delete audits their IP created (the same rule the
+  // list + report use) — otherwise free-tier users couldn't manage theirs.
   const auth = await requireSession(request);
-  if (!auth.ok) return auth.response;
+  const ip = getClientIp(request);
 
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     if (!id) {
       return Response.json({ error: "id query parameter is required" }, { status: 400 });
+    }
+
+    if (!auth.ok) {
+      // Anonymous path: verify the audit belongs to this IP first.
+      let row;
+      try {
+        row = await getAudit(id);
+      } catch {
+        // getAudit throws when the row doesn't exist — that's a 404, not 500.
+        return Response.json({ error: "Audit not found" }, { status: 404 });
+      }
+      if (!ip || row.created_ip !== ip) {
+        return Response.json(
+          { error: "Missing or invalid authorization header" },
+          { status: 401 }
+        );
+      }
     }
 
     const deleted = await deleteAudit(id);

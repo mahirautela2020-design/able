@@ -1,72 +1,70 @@
-# ScanA11y — Enterprise Accessibility Auditor
+# ScanA11y
 
-**Make the web work for everyone.**
+**Enterprise-grade WCAG 2.2 accessibility auditing — open source.**
 
-ScanA11y audits websites against the full WCAG 2.2 success criteria (A/AA/AAA) with
-deterministic, evidence-first findings — every issue backed by a rule ID, the exact
-success criterion, a DOM selector, and a screenshot crop. Runs on open-source engines
-(axe-core, Playwright, colorjs.io) — no paid APIs, no LLM-generated findings.
+ScanA11y audits digital products for accessibility against the full WCAG 2.2
+success criteria (A/AA/AAA) with **evidence-first findings**: screenshots,
+per-criterion compliance matrix, W3C maturity scoring, and 16:9 PDF reports.
 
-## Status
+## Input modes
 
-**P0 (engine core) — built.** URL audits end-to-end: submit a URL → crawl (≤5 pages) →
-settle-then-scan with axe-core → keyboard behavior walkthrough (focus order, traps,
-visibility, skip links) → findings mapped to the WCAG 2.2 SC registry (86 criteria) →
-annotated compliance report with evidence.
+| Mode | What it scans |
+|---|---|
+| **URL** | Live website — axe-core + keyboard walkthrough + evidence crops |
+| **Figma** | Design files — contrast, touch targets, image alt (OAuth2, per-user) |
+| **UI screenshot** | Upload an image — vision-model advisory suggestions |
+| **APK** | Android package — aapt2 manifest analysis |
+
+## Why it's "best value"
+
+- **Same engine as the leaders** — axe-core is what axe DevTools, Lighthouse,
+  and Microsoft Accessibility Insights wrap; ScanA11y uses it directly.
+- **One platform, five modes** — no four-tool stack.
+- **Zero paid APIs in the audit pipeline** — all engines are open source.
+- **LLM discipline** — vision models only *suggest* (needs_review bucket);
+  they never create hard findings. Contrast is deterministic color math.
 
 ## Stack
 
-- **Next.js 16** (App Router) + **shadcn/ui** — web app & report UI
-- **Supabase** (free tier) — Postgres + private evidence storage (signed URLs)
-- **Inngest** (free tier) — background queue, one step per page (Vercel 60s-safe)
-- **@sparticuz/chromium + Playwright** — headless browsing on Vercel
-- **axe-core 4.13** (from node_modules, no CDN) — the industry-standard engine
-- **colorjs.io** — contrast math (P1+)
+- **Next.js 16** (App Router, Turbopack) + TypeScript
+- **Supabase** (Postgres, RLS, storage) — owner-scoped, 24h TTL cleanup
+- **Inngest** (background audit pipeline, retention cron)
+- **Playwright + @sparticuz/chromium** (browser engine, serverless-ready)
+- **shadcn/ui** components, Geist font
 
-## Key design decisions
-
-- **Settle before scan** — pages are scanned only after content signal + network
-  idle + fonts loaded. Never at `domcontentloaded` (the accuracy bug that sinks most
-  homegrown auditors on JS-rendered sites).
-- **Evidence-first** — a finding without ruleId + criterion + selector + screenshot
-  crop is not a finding. Every finding maps to ≥1 SC via the installed axe-core's own
-  rule metadata (programmatic, version-locked — never hand-written).
-- **Honest buckets** — `automated` / `needs_review` (axe `incomplete`, gradients,
-  focus traps — the human-judgment layer) / `behavior` (keyboard) / `best-practice`.
-- **No LLM in the scan path** — P0 is 100% deterministic. AI (when it arrives) only
-  explains engine-verified findings, never creates them.
-- **SSRF-safe crawling** — private/loopback ranges rejected, post-redirect
-  re-validation, IP rate limiting, bot-wall detection.
-
-## Getting started
+## Quick start
 
 ```bash
 npm install
-cp .env.local.example .env.local   # fill in Supabase + Inngest keys
-npm run inngest:dev                # local queue
-npm run dev                        # app on :3000
-npm run verify                     # lint + typecheck + test + build
+cp .env.local.example .env.local   # fill Supabase + Inngest values
+npx playwright install chromium     # browser for audits
+npm run inngest:dev                 # background worker (terminal 1)
+npm run dev                         # app (terminal 2) → localhost:3000
 ```
 
-Supabase: run the schema from `P0_BUILD_PROMPT.md` §4 in the SQL editor, enable RLS
-on all tables (zero policies), create a **private** `evidence` bucket.
+Verify: `npm run verify` (lint + typecheck + tests + build).
 
-## Roadmap
+## Free tier & auth
 
-| Phase | Scope |
-|---|---|
-| P0 ✅ | Engine core: settle-scan, WCAG registry, keyboard walkthrough, annotated report |
-| P1 | Explore workbench: live session, element inspector, live contrast fixes, color-blind overlays |
-| P2 | Module selector, portal sessions, needs-review UI, multi-viewport, regulation mapping |
-| P3 | Figma + image modes |
-| P4 | APK static, code/repo audit |
-| P5 | Screen readers (NVDA out-of-process), maturity scoring, ACR/VPAT |
-| P6 | Enterprise shell: SSO, RBAC, multi-tenant, API, MCP plugin framework |
+- Anonymous users get **5 audits/day per IP** — no account needed.
+- Sign up (instant, no email confirmation) for unlimited audits + Figma connect.
+- Audit reports and Figma authorizations **self-delete within 24 hours**.
 
-Spec docs for every phase live in this repo (`PRODUCT_BLUEPRINT.md`,
-`ENTERPRISE_SPEC.md`, `WORKBENCH_VISION.md`, `P0_BUILD_PROMPT.md`).
+## Database
+
+`supabase/migrations/` — apply with the Supabase CLI:
+
+```bash
+supabase link --project-ref <ref>
+supabase db push
+```
+
+## Roadmap (honest gaps)
+
+iOS .ipa automation (needs macOS/Xcode), APK dynamic testing (TalkBack),
+screen-reader automation (manual/guided today — industry-wide limitation),
+deterministic UI-element detection (OmniParser/supervision).
 
 ## License
 
-Proprietary — personal portfolio project. (Specs in this repo describe the product
-and its build plan; code is not yet licensed for external use.)
+[MIT](LICENSE) — personal portfolio IP, not affiliated with any employer.
