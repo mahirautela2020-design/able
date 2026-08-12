@@ -163,14 +163,27 @@ export const auditUrl = inngest.createFunction(
           for (const f of allFindingsForPage) {
             if (f.bbox) {
               const cropPath = `${evidencePath}-${f.rule_id}-${Math.random().toString(36).slice(2, 8)}.webp`;
+              // sharp.extract requires integers within the image bounds —
+              // bboxes are float (CSS pixels), so round + clamp everything.
+              const left = Math.min(
+                Math.max(0, Math.round(f.bbox.x - 30)),
+                screenshotWidth - 1
+              );
+              const top = Math.min(
+                Math.max(0, Math.round(f.bbox.y - 30)),
+                screenshotHeight - 1
+              );
+              const width = Math.max(
+                1,
+                Math.min(screenshotWidth - left, Math.round(f.bbox.width + 60))
+              );
+              const height = Math.max(
+                1,
+                Math.min(screenshotHeight - top, Math.round(f.bbox.height + 60))
+              );
               cropUploads.push(
                 sharp(screenshot)
-                  .extract({
-                    left: Math.max(0, f.bbox.x - 30),
-                    top: Math.max(0, f.bbox.y - 30),
-                    width: Math.min(screenshotWidth, f.bbox.width + 60),
-                    height: Math.min(screenshotHeight, f.bbox.height + 60),
-                  })
+                  .extract({ left, top, width, height })
                   .webp({ quality: 80 })
                   .toBuffer()
                   .then((buf) => uploadEvidence(buf, cropPath))
