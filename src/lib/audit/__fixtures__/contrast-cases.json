@@ -1,0 +1,81 @@
+[
+  {
+    "description": "white on black — AA pass (ratio ~21:1)",
+    "fg": "#FFFFFF",
+    "bg": "#000000",
+    "expectedRatio": 21.0,
+    "fgNodeId": "a1",
+    "bgNodeId": "b1",
+    "wcagLevel": "AA",
+    "passesAA": true,
+    "passesAAA": true
+  },
+  {
+    "description": "gray #949494 on white — AA fail (ratio ~3.0:1)",
+    "fg": "#949494",
+    "bg": "#FFFFFF",
+    "expectedRatio": 3.0,
+    "fgNodeId": "a2",
+    "bgNodeId": "b2",
+    "wcagLevel": "AA",
+    "passesAA": false,
+    "passesAAA": false
+  },
+  {
+    "description": "dark #595959 on white — AAA pass (ratio ~7.0:1)",
+    "fg": "#595959",
+    "bg": "#FFFFFF",
+    "expectedRatio": 7.0,
+    "fgNodeId": "a3",
+    "bgNodeId": "b3",
+    "wcagLevel": "AAA",
+    "passesAA": true,
+    "passesAAA": true
+  },
+  {
+    "description": "large text #767676 on white — AA large-text pass (ratio ~4.5:1, passes 3:1 threshold)",
+    "fg": "#767676",
+    "bg": "#FFFFFF",
+    "expectedRatio": 4.54,
+    "fgNodeId": "a4",
+    "bgNodeId": "b4",
+    "wcagLevel": "AA",
+    "passesAA": true,
+    "passesAAA": true,
+    "fontSize": 24
+  },
+  {
+    "description": "white on white — ratio 1:1",
+    "fg": "#FFFFFF",
+    "bg": "#FFFFFF",
+    "expectedRatio": 1.0,
+    "fgNodeId": "a5",
+    "bgNodeId": "b5",
+    "wcagLevel": "AA",
+    "passesAA": false,
+    "passesAAA": false
+  },
+  {
+    "description": "gradient fill — skipped",
+    "fg": null,
+    "bg": null,
+    "expectedRatio": null,
+    "fgNodeId": "a6",
+    "bgNodeId": "b6",
+    "wcagLevel": "AA",
+    "passesAA": false,
+    "passesAAA": false,
+    "isGradient": true
+  },
+  {
+    "description": "blue button #264db5 on white — AA pass (~7.6:1)",
+    "fg": "#264db5",
+    "bg": "#FFFFFF",
+    "expectedRatio": 7.56,
+    "fgNodeId": "a7",
+    "bgNodeId": "b7",
+    "wcagLevel": "AA",
+    "passesAA": true,
+    "passesAAA": true
+  }
+]

@@ -1,0 +1,118 @@
+{
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "1:2",
+        "name": "Page 1",
+        "type": "CANVAS",
+        "children": [
+          {
+            "id": "2:1",
+            "name": "Hero Section",
+            "type": "FRAME",
+            "fills": [{ "blendMode": "NORMAL", "type": "SOLID", "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+            "strokes": [{ "blendMode": "NORMAL", "type": "SOLID", "color": { "r": 0, "g": 0, "b": 0, "a": 1 } }],
+            "strokeWeight": 2,
+            "children": [
+              {
+                "id": "3:1",
+                "name": "Title",
+                "type": "TEXT",
+                "characters": "Welcome to Able",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontWeight": 700,
+                  "fontSize": 32,
+                  "lineHeightPx": 40,
+                  "letterSpacing": 0,
+                  "fills": [{ "blendMode": "NORMAL", "type": "SOLID", "color": { "r": 0.1, "g": 0.1, "b": 0.1, "a": 1 } }]
+                }
+              },
+              {
+                "id": "3:2",
+                "name": "Subtitle",
+                "type": "TEXT",
+                "characters": "Enterprise accessibility auditing",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontWeight": 400,
+                  "fontSize": 16,
+                  "lineHeightPx": 24,
+                  "letterSpacing": 0,
+                  "fills": [{ "blendMode": "NORMAL", "type": "SOLID", "color": { "r": 0.4, "g": 0.4, "b": 0.4, "a": 1 } }]
+                }
+              },
+              {
+                "id": "3:3",
+                "name": "CTA Button",
+                "type": "RECTANGLE",
+                "fills": [{ "blendMode": "NORMAL", "type": "SOLID", "color": { "r": 0.15, "g": 0.35, "b": 0.85, "a": 1 } }],
+                "strokes": [],
+                "cornerRadius": 8,
+                "absoluteBoundingBox": { "x": 0, "y": 200, "width": 200, "height": 48 },
+                "children": [
+                  {
+                    "id": "4:1",
+                    "name": "Button Text",
+                    "type": "TEXT",
+                    "characters": "Get Started",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 16,
+                      "lineHeightPx": 20,
+                      "letterSpacing": 0,
+                      "fills": [{ "blendMode": "NORMAL", "type": "SOLID", "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }]
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3:4",
+                "name": "Empty Frame",
+                "type": "FRAME",
+                "children": []
+              },
+              {
+                "id": "3:5",
+                "name": "Hero Image",
+                "type": "RECTANGLE",
+                "fills": [{ "blendMode": "NORMAL", "type": "IMAGE", "imageRef": "img_abc123", "scaleMode": "FILL" }],
+                "strokes": []
+              },
+              {
+                "id": "3:6",
+                "name": "Gradient Banner",
+                "type": "RECTANGLE",
+                "fills": [
+                  {
+                    "blendMode": "NORMAL",
+                    "type": "GRADIENT_LINEAR",
+                    "gradientStops": [
+                      { "position": 0, "color": { "r": 1, "g": 0, "b": 0, "a": 1 } },
+                      { "position": 1, "color": { "r": 0, "g": 0, "b": 1, "a": 1 } }
+                    ]
+                  }
+                ],
+                "strokes": []
+              },
+              {
+                "id": "3:7",
+                "name": "Unstyled text",
+                "type": "TEXT",
+                "characters": "No style block"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "name": "Able Sample File",
+  "lastModified": "2026-01-01T00:00:00Z",
+  "thumbnailUrl": "https://s3-alpha.figma.com/thumbnails/sample.png",
+  "version": "1"
+}

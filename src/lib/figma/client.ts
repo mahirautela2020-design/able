@@ -1,0 +1,99 @@
+import { getFigmaPat } from "@/lib/env.server";
+
+const FIGMA_API = "https://api.figma.com/v1";
+const FIGMA_HOST = "api.figma.com";
+const FILE_KEY_RE = /^[A-Za-z0-9]+$/;
+
+interface FigmaFileResponse {
+  document: unknown;
+  name: string;
+  lastModified: string;
+  thumbnailUrl?: string;
+  version?: string;
+}
+
+interface FigmaNodeResponse {
+  nodes: Record<string, { document: unknown }>;
+}
+
+interface FigmaImagesResponse {
+  images: Record<string, string | null>;
+}
+
+function validateFileKey(key: string): void {
+  if (!FILE_KEY_RE.test(key)) {
+    throw new Error(`Invalid file key: ${key}`);
+  }
+}
+
+function validateUrl(url: string): void {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:") {
+    throw new Error(`SSRF guard: only HTTPS allowed, got ${parsed.protocol}`);
+  }
+  if (parsed.hostname !== FIGMA_HOST) {
+    throw new Error(`SSRF guard: host must be ${FIGMA_HOST}, got ${parsed.hostname}`);
+  }
+}
+
+async function fetchFigma(path: string): Promise<Response> {
+  const pat = getFigmaPat();
+  if (!pat) {
+    throw new Error("FIGMA_PAT not configured");
+  }
+
+  const url = `${FIGMA_API}${path}`;
+  validateUrl(url);
+
+  return fetch(url, {
+    headers: {
+      "X-Figma-Token": pat,
+    },
+  });
+}
+
+export async function getFile(fileKey: string): Promise<FigmaFileResponse> {
+  validateFileKey(fileKey);
+  const resp = await fetchFigma(`/files/${fileKey}?depth=4`);
+  if (!resp.ok) {
+    throw new Error(`Figma API error (${resp.status}): ${await resp.text()}`);
+  }
+  return resp.json() as Promise<FigmaFileResponse>;
+}
+
+export async function getNode(
+  fileKey: string,
+  nodeId: string
+): Promise<FigmaNodeResponse["nodes"][string] | null> {
+  validateFileKey(fileKey);
+  const resp = await fetchFigma(`/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}`);
+  if (!resp.ok) {
+    throw new Error(`Figma API error (${resp.status}): ${await resp.text()}`);
+  }
+  const data = (await resp.json()) as FigmaNodeResponse;
+  return data.nodes[nodeId] ?? null;
+}
+
+export async function getImages(
+  fileKey: string,
+  ids: string[]
+): Promise<Record<string, string | null>> {
+  validateFileKey(fileKey);
+  const resp = await fetchFigma(
+    `/images/${fileKey}?ids=${encodeURIComponent(ids.join(","))}&format=png`
+  );
+  if (!resp.ok) {
+    throw new Error(`Figma API error (${resp.status}): ${await resp.text()}`);
+  }
+  const data = (await resp.json()) as FigmaImagesResponse;
+  return data.images;
+}
+
+export async function getFileNodes(fileKey: string): Promise<unknown> {
+  validateFileKey(fileKey);
+  const resp = await fetchFigma(`/files/${fileKey}/nodes`);
+  if (!resp.ok) {
+    throw new Error(`Figma API error (${resp.status}): ${await resp.text()}`);
+  }
+  return resp.json();
+}
