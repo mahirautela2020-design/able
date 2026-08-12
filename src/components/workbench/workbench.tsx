@@ -56,7 +56,8 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [previewKey, setPreviewKey] = useState(0); // reload iframe
   const [frameBlocked, setFrameBlocked] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
-  const [startedAt] = useState(() => Date.now());
+  const [now, setNow] = useState(0);
+  const [startedAt, setStartedAt] = useState(0);
   const [liveFindings, setLiveFindings] = useState<WorkbenchFinding[]>(findings);
   const [status, setStatus] = useState(auditStatus);
   const [progress, setProgress] = useState<Record<string, unknown> | null>(null);
@@ -65,12 +66,15 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const registry = useMemo(() => getWcagRegistry(), []);
 
   // Live-poll while the audit is queued/running so the checklist fills in
-  // as pages finish. Stops once complete/failed.
+  // as pages finish. Stops once complete/failed. Also ticks the clock so
+  // the ETA stays fresh (async context — legal setState).
   useEffect(() => {
     if (status !== "queued" && status !== "running") return;
     let stopped = false;
 
     const tick = async () => {
+      setNow(Date.now());
+      setStartedAt((prev) => (prev === 0 ? Date.now() : prev));
       try {
         const res = await fetch(`/api/audits/${auditId}/report`);
         if (!res.ok) return;
@@ -172,11 +176,11 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
     ) {
       return null;
     }
-    const elapsed = (Date.now() - startedAt) / 1000;
+    const elapsed = (now - startedAt) / 1000;
     const perPage = elapsed / progress.pagesDone;
     const remaining = progress.pagesTotal - progress.pagesDone;
     return Math.max(5, Math.round(perPage * remaining));
-  }, [status, progress, startedAt]);
+  }, [status, progress, now, startedAt]);
 
   /** Download the 16:9 PDF with the session token (endpoint is auth-gated). */
   async function handleDownloadPdf() {
