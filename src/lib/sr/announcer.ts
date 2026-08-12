@@ -12,12 +12,12 @@ export async function captureLiveAnnouncements(
   const announcements: Announcement[] = [];
 
   await page.evaluate(() => {
-    interface AbleWindow extends Window {
+    interface ScanA11yWindow extends Window {
       __ableAnnouncements: Announcement[];
       __ableAnnounced: Set<string>;
       __ableObs: MutationObserver;
     }
-    const win = window as unknown as AbleWindow;
+    const win = window as unknown as ScanA11yWindow;
 
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
@@ -57,11 +57,11 @@ export async function captureLiveAnnouncements(
   });
 
   const captured = await page.evaluate(() => {
-    interface AbleWindow extends Window {
+    interface ScanA11yWindow extends Window {
       __ableAnnouncements: Announcement[];
       __ableObs: MutationObserver;
     }
-    const win = window as unknown as AbleWindow;
+    const win = window as unknown as ScanA11yWindow;
     win.__ableObs?.disconnect();
     return win.__ableAnnouncements || [];
   });

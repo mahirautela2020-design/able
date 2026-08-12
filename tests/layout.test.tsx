@@ -11,10 +11,10 @@ describe("sidebar", () => {
     expect(screen.getByText("AX Snapshots")).toBeInTheDocument();
   });
 
-  it("renders Able branding", () => {
+  it("renders ScanA11y branding", () => {
     render(<Sidebar auditId="test-audit-id" />);
 
-    expect(screen.getByText("Able")).toBeInTheDocument();
+    expect(screen.getByText("ScanA11y")).toBeInTheDocument();
     expect(screen.getByText("Accessibility Auditor")).toBeInTheDocument();
   });
 

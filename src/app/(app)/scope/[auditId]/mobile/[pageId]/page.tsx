@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { MobileSimulator } from "./MobileSimulator";
 
 export const metadata: Metadata = {
-  title: "Mobile View — Able",
+  title: "Mobile View — ScanA11y",
 };
 
 export default async function MobilePage({
