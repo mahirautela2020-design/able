@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 
 /**
@@ -37,7 +38,8 @@ export function ConnectFigmaButton() {
         data: { session: s },
       } = await supabase.auth.getSession();
       if (!s) {
-        setError("Sign in required — enterprise authentication ships with the ScanA11y enterprise shell.");
+        // No browser session — take the user to the sign-in page.
+        window.location.href = "/auth";
         return;
       }
 
