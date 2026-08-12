@@ -1,6 +1,12 @@
+import { runDynamicAudit } from "@/lib/android/dynamic";
+import type { DynamicScreen } from "@/lib/android/dynamic";
+import type { DynamicFinding } from "@/lib/android/dynamic-checks";
 import { parseApkManifestFromBuffer } from "@/lib/android/manifest";
 import { supabase, uploadEvidence } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const MAX_APK_SIZE_MB = 200;
 
@@ -84,6 +90,29 @@ export async function POST(request: Request) {
       }
     }
 
+    // ── Dynamic pass (emulator) — gated by AVD_NAME / APK_DYNAMIC; degrades to
+    // static-only when the emulator is absent. Findings are measured, not LLM.
+    let dynamic: { ran: boolean; screens: DynamicScreen[] } = { ran: false, screens: [] };
+    try {
+      const tmpDir = mkdtempSync(join(tmpdir(), "apk-dynamic-"));
+      const tmpApk = join(tmpDir, "app.apk");
+      try {
+        writeFileSync(tmpApk, buffer);
+        const result = await runDynamicAudit(tmpApk, { package: manifest?.package ?? null });
+        dynamic = { ran: result.ran, screens: result.screens };
+      } finally {
+        try {
+          rmSync(tmpDir, { recursive: true, force: true });
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    } catch {
+      dynamic = { ran: false, screens: [] };
+    }
+
+    const dynamicFindings: DynamicFinding[] = dynamic.screens.flatMap((s) => s.findings);
+
     return Response.json({
       success: true,
       apkPath,
@@ -96,6 +125,8 @@ export async function POST(request: Request) {
             activities: manifest.activities.length,
           }
         : null,
+      dynamic,
+      findings: dynamicFindings,
     });
   } catch (e) {
     console.error("POST /api/uploads/apk error:", e);
