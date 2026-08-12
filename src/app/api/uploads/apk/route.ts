@@ -1,9 +1,21 @@
 import { parseApkManifestFromBuffer } from "@/lib/android/manifest";
 import { supabase, uploadEvidence } from "@/lib/supabase/server";
+import { requireSession } from "@/lib/supabase/session";
 
 const MAX_APK_SIZE_MB = 200;
 
+/** Strip path separators and control chars so a user-supplied filename can't
+ * traverse the storage key space (e.g. "../../other/audit/x.apk"). */
+export function sanitizeFilename(name: string): string {
+  const base = name.split(/[\\/]/).pop() ?? "";
+  return base.replace(/[^\w.\-]/g, "_").slice(0, 100);
+}
+
 export async function POST(request: Request) {
+  // Auth guard: uploading to someone else's audit storage must require a session.
+  const auth = await requireSession(request);
+  if (!auth.ok) return auth.response;
+
   try {
     const contentType = request.headers.get("content-type") || "";
     if (!contentType.includes("multipart/form-data")) {
@@ -36,7 +48,8 @@ export async function POST(request: Request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    const evidencePath = `${auditId}/uploads/${file.name}`;
+    const safeName = sanitizeFilename(file.name);
+    const evidencePath = `${auditId}/uploads/${safeName}`;
     let apkPath: string;
     try {
       apkPath = await uploadEvidence(buffer, evidencePath, "application/vnd.android.package-archive");
