@@ -26,6 +26,28 @@ function validateFileKey(key: string): void {
   }
 }
 
+/**
+ * Accept either a raw file key ("abc123DEF") or a full Figma share URL
+ * ("https://www.figma.com/design/abc123DEF/My-Design") — extracts the key.
+ * Returns null when neither matches.
+ */
+export function extractFileKey(input: string): string | null {
+  const trimmed = input.trim();
+  if (FILE_KEY_RE.test(trimmed)) return trimmed;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.hostname === "www.figma.com" || parsed.hostname === "figma.com") {
+      // /design/<key>/...  |  /file/<key>/...  |  /proto/<key>/...
+      const match = parsed.pathname.match(/\/(?:design|file|proto)\/([A-Za-z0-9]+)/);
+      if (match) return match[1];
+    }
+  } catch {
+    // not a URL — fall through
+  }
+  return null;
+}
+
 function validateUrl(url: string): void {
   const parsed = new URL(url);
   if (parsed.protocol !== "https:") {

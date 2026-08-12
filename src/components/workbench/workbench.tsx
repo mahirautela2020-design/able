@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { getWcagRegistry, type WcagSuccessCriterion } from "@/engine/wcag-registry";
 
 export interface WorkbenchFinding {
   id: string;
@@ -49,10 +50,14 @@ const SEVERITY_DOT: Record<string, string> = {
 export function Workbench({ auditId, targetUrl, auditStatus, findings }: WorkbenchProps) {
   const [activeSc, setActiveSc] = useState<string | null>(null);
   const [activePrinciple, setActivePrinciple] = useState<string>("1");
+  const [levelFilter, setLevelFilter] = useState<"ALL" | "A" | "AA" | "AAA">("ALL");
   const [previewKey, setPreviewKey] = useState(0); // reload iframe
   const [liveFindings, setLiveFindings] = useState<WorkbenchFinding[]>(findings);
   const [status, setStatus] = useState(auditStatus);
   const [progress, setProgress] = useState<Record<string, unknown> | null>(null);
+
+  // Full WCAG 2.2 registry (86 SCs) — the checklist the user sees.
+  const registry = useMemo(() => getWcagRegistry(), []);
 
   // Live-poll while the audit is queued/running so the checklist fills in
   // as pages finish. Stops once complete/failed.
@@ -94,21 +99,52 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   }, [liveFindings]);
 
   const scList = useMemo(() => {
-    const seen = new Map<string, { sc: string; count: number; worst: string }>();
-    for (const [sc, fs] of bySc) {
+    type Status = "fail" | "needs_review" | "pass" | "manual";
+    const bySc = new Map<string, WorkbenchFinding[]>();
+    for (const f of liveFindings) {
+      const sc = f.wcag_criterion || "best-practice";
+      const arr = bySc.get(sc) || [];
+      arr.push(f);
+      bySc.set(sc, arr);
+    }
+
+    const rows: {
+      sc: WcagSuccessCriterion;
+      count: number;
+      worst: string;
+      status: Status;
+    }[] = [];
+
+    for (const sc of registry) {
+      const fs = bySc.get(sc.id) || [];
+      const hasHard = fs.some(
+        (f) => f.bucket === "violation" || f.severity === "critical" || f.severity === "serious"
+      );
       const worst =
         fs.find((f) => f.severity === "critical")?.severity ||
         fs.find((f) => f.severity === "serious")?.severity ||
         fs.find((f) => f.severity === "moderate")?.severity ||
         "minor";
-      seen.set(sc, { sc, count: fs.length, worst });
+
+      let status: Status;
+      if (fs.length === 0) {
+        status = sc.manualTest ? "manual" : "pass";
+      } else if (hasHard || fs.some((f) => f.bucket !== "needs_review")) {
+        status = "fail";
+      } else {
+        status = "needs_review";
+      }
+
+      rows.push({ sc, count: fs.length, worst, status });
     }
-    return Array.from(seen.values()).sort((a, b) => a.sc.localeCompare(b.sc));
-  }, [bySc]);
+
+    return rows;
+  }, [liveFindings, registry]);
 
   const principleScs = scList.filter((s) => {
-    const num = s.sc.split(".")[0];
-    return num === activePrinciple;
+    if (s.sc.principle !== activePrinciple) return false;
+    if (levelFilter !== "ALL" && s.sc.level !== levelFilter) return false;
+    return true;
   });
 
   const activeFindings = activeSc ? bySc.get(activeSc) || [] : [];
@@ -144,32 +180,55 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           ))}
         </div>
 
-        {/* SC list for the active principle */}
+        {/* Level filter: which standard/conformance level to show */}
+        <div className="flex border-b text-[11px]">
+          {(["ALL", "A", "AA", "AAA"] as const).map((lvl) => (
+            <button
+              key={lvl}
+              onClick={() => setLevelFilter(lvl)}
+              className={`flex-1 py-1.5 font-medium transition-colors ${
+                levelFilter === lvl
+                  ? "text-primary bg-primary/5"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {lvl === "ALL" ? "All levels" : lvl}
+            </button>
+          ))}
+        </div>
+
+        {/* SC list for the active principle + level */}
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {principleScs.length === 0 && (
             <p className="text-xs text-muted-foreground p-3">
-              No findings under this principle.
+              No criteria under this principle and level.
             </p>
           )}
-          {principleScs.map(({ sc, count, worst }) => (
+          {principleScs.map(({ sc, count, worst, status }) => (
             <button
-              key={sc}
-              onClick={() => setActiveSc(activeSc === sc ? null : sc)}
+              key={sc.id}
+              onClick={() => setActiveSc(activeSc === sc.id ? null : sc.id)}
               className={`w-full text-left p-2 rounded-md border transition-colors ${
-                activeSc === sc
+                activeSc === sc.id
                   ? "bg-accent border-primary/40"
                   : "hover:bg-accent/50 border-transparent"
               }`}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="font-mono text-xs font-medium">{sc}</span>
+                <span className="font-mono text-xs font-medium">{sc.id}</span>
                 <div className="flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-full ${SEVERITY_DOT[worst] || "bg-gray-400"}`} />
-                  <span className="text-xs text-muted-foreground">{count}</span>
+                  <StatusDot status={status} />
+                  {count > 0 && (
+                    <span className="text-xs text-muted-foreground">{count}</span>
+                  )}
                 </div>
               </div>
               <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                {worst === "critical" || worst === "serious" ? "Fails" : "Needs review"}
+                {sc.name}
+              </p>
+              <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                {statusLabel(status)}
+                {sc.manualTest ? " · manual" : ""} · {sc.level}
               </p>
             </button>
           ))}
@@ -265,4 +324,36 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
       </main>
     </div>
   );
+}
+
+const STATUS_STYLE: Record<string, string> = {
+  fail: "bg-red-500",
+  needs_review: "bg-amber-500",
+  pass: "bg-emerald-500",
+  manual: "bg-slate-400",
+};
+
+function StatusDot({ status }: { status: string }) {
+  return (
+    <span
+      className={`w-2 h-2 rounded-full ${STATUS_STYLE[status] || "bg-slate-400"}`}
+      aria-label={statusLabel(status)}
+      title={statusLabel(status)}
+    />
+  );
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case "fail":
+      return "Fails";
+    case "needs_review":
+      return "Needs review";
+    case "pass":
+      return "Pass";
+    case "manual":
+      return "Manual check";
+    default:
+      return status;
+  }
 }

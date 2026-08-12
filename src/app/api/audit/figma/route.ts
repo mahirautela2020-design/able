@@ -1,7 +1,7 @@
 import { isFigmaAuditPublic } from "@/lib/env.server";
 import { requireSession } from "@/lib/supabase/session";
 import { getFigmaConnection } from "@/lib/supabase/server";
-import { getFile, getNode } from "@/lib/figma/client";
+import { getFile, getNode, extractFileKey } from "@/lib/figma/client";
 import { parseFigmaFile, collectFillableNodes, collectTextNodes } from "@/lib/figma/parse";
 import { extractColorPairs, checkContrastPairs } from "@/lib/audit/image-contrast";
 import { checkImageAlt } from "@/lib/audit/image-alt";
@@ -19,10 +19,15 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { fileKey, nodeId, includeContrast = true, includeAlt = true } = body;
+    const { fileKey: rawFileKey, nodeId, includeContrast = true, includeAlt = true } = body;
 
-    if (!fileKey || typeof fileKey !== "string") {
-      return Response.json({ error: "fileKey is required" }, { status: 400 });
+    // Accept a raw file key OR a full Figma share URL.
+    const fileKey = extractFileKey(rawFileKey ?? "");
+    if (!fileKey) {
+      return Response.json(
+        { error: "fileKey is required — a Figma file key or share URL" },
+        { status: 400 }
+      );
     }
 
     // Per-user OAuth token when authenticated (their files), else PAT fallback.
