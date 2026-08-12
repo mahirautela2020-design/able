@@ -44,24 +44,27 @@ export function AuditInput() {
       if (!url.trim()) return toast.error("Enter a URL");
       setLoading(true);
       try {
-        // URL audits are owner-scoped — send the session token.
+        // Free tier: anonymous audits allowed (5/day per IP). Send the
+        // session token when present so the audit is owner-scoped.
         const {
           data: { session },
         } = await supabase.auth.getSession();
-        if (!session) {
-          window.location.href = "/auth";
-          return;
-        }
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        if (session) headers.Authorization = `Bearer ${session.access_token}`;
 
         const res = await fetch("/api/audits", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
+          headers,
           body: JSON.stringify({ url }),
         });
         const data = await res.json();
+        if (res.status === 429 && data.redirectTo) {
+          toast.error(data.error);
+          window.location.href = data.redirectTo;
+          return;
+        }
         if (!res.ok) return toast.error(data.error || "Failed to start audit");
         toast.success("Audit started");
         router.push(`/workbench/${data.id}`);

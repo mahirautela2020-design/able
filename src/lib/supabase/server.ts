@@ -97,7 +97,7 @@ export async function getAudit(auditId: string) {
   const { data, error } = await supabase
     .from("audits")
     .select(
-      "id, target_url, status, config, progress, report_path, error_code, error_detail, created_at, completed_at"
+      "id, target_url, status, config, progress, report_path, error_code, error_detail, created_at, completed_at, created_by, created_ip"
     )
     .eq("id", auditId)
     .single();
@@ -200,6 +200,26 @@ export async function getRecentAudits(
 
   if (error) throw error;
   return data;
+}
+
+/**
+ * Count audits created by an IP within the last `hours` (default 24).
+ * Used to enforce the anonymous free tier: 5 audits/day per IP, then
+ * the user is prompted to create an account.
+ */
+export async function countAuditsByIp(
+  ip: string,
+  hours = 24
+): Promise<number> {
+  const since = new Date(Date.now() - hours * 3600_000).toISOString();
+  const { count, error } = await supabase
+    .from("audits")
+    .select("id", { count: "exact", head: true })
+    .eq("created_ip", ip)
+    .gt("created_at", since);
+
+  if (error) throw error;
+  return count ?? 0;
 }
 
 /**

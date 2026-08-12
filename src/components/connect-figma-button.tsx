@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase/client";
 
 /**
@@ -69,25 +70,23 @@ export function ConnectFigmaButton() {
 
   if (session === null) {
     return (
-      <button
-        disabled
-        className="text-xs px-3 py-1.5 rounded-md border border-muted-foreground/30 text-muted-foreground"
-      >
+      <Button variant="outline" size="sm" disabled>
         Checking session…
-      </button>
+      </Button>
     );
   }
 
   return (
     <div className="flex flex-col gap-1.5">
-      <button
+      <Button
         onClick={handleConnect}
         disabled={connecting}
-        className="inline-flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-md bg-[#0d99ff] text-white hover:bg-[#0b85e0] transition-colors disabled:opacity-60"
+        size="sm"
+        className="bg-[#0d99ff] hover:bg-[#0b85e0] text-white"
       >
         <FigmaIcon />
         {connecting ? "Redirecting to Figma…" : "Connect Figma"}
-      </button>
+      </Button>
       {error && <p className="text-xs text-destructive max-w-[220px]">{error}</p>}
     </div>
   );
