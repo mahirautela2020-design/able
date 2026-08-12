@@ -7,6 +7,7 @@ import { Loader2, Globe, ImageIcon, Smartphone, PenTool } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { ConnectFigmaButton } from "@/components/connect-figma-button";
+import { supabase } from "@/lib/supabase/client";
 
 type Mode = "url" | "figma" | "image" | "apk";
 
@@ -43,9 +44,21 @@ export function AuditInput() {
       if (!url.trim()) return toast.error("Enter a URL");
       setLoading(true);
       try {
+        // URL audits are owner-scoped — send the session token.
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session) {
+          window.location.href = "/auth";
+          return;
+        }
+
         const res = await fetch("/api/audits", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
           body: JSON.stringify({ url }),
         });
         const data = await res.json();

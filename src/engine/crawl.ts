@@ -66,9 +66,24 @@ export async function crawl(seedUrl: string, maxPages: number = 5): Promise<stri
 }
 
 export function sanitizeUrl(raw: string): URL | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  // User-friendly input: accept "www.qantas.com", "qantas.com",
+  // "https://qantas.com", "http://..." — auto-prefix https:// when no
+  // scheme is present.
+  let candidate = trimmed;
+  if (!/^https?:\/\//i.test(candidate)) {
+    candidate = `https://${candidate}`;
+  }
+
   try {
-    const url = new URL(raw);
+    const url = new URL(candidate);
     if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    // Require a real host (rejects "https://" alone or bare paths)
+    if (!url.hostname || !url.hostname.includes(".")) {
       return null;
     }
     return url;

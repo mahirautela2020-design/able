@@ -20,6 +20,22 @@ describe("crawl", () => {
     it("rejects invalid URLs", () => {
       expect(sanitizeUrl("not-a-url")).toBeNull();
     });
+
+    it("auto-prefixes https:// when no scheme is given", () => {
+      const url = sanitizeUrl("www.qantas.com");
+      expect(url).not.toBeNull();
+      expect(url!.protocol).toBe("https:");
+      expect(url!.hostname).toBe("www.qantas.com");
+
+      const bare = sanitizeUrl("qantas.com");
+      expect(bare).not.toBeNull();
+      expect(bare!.protocol).toBe("https:");
+    });
+
+    it("keeps explicit schemes untouched", () => {
+      expect(sanitizeUrl("http://example.com")!.protocol).toBe("http:");
+      expect(sanitizeUrl("https://example.com")!.protocol).toBe("https:");
+    });
   });
 
   describe("validateHost", () => {
