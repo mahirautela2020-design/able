@@ -9,11 +9,40 @@ mkdir -p build-logs docs/phase-reports
 RUN_LOG="build-logs/run.log"
 CHROME="C:\Program Files\Google\Chrome\Application\chrome.exe"
 
-# ── models (opencode-go provider — the only working one on this machine) ──
-RESEARCHER_MODEL="opencode-go/glm-5.2"       # analysis only — cheap + strong (was kimi-k3)
-BUILDER_MODEL="opencode-go/deepseek-v4-pro"  # implementation — quality matters most
+# ── models / backends ──
+# AGENT_BACKEND=claude   → researcher + builder run via Claude Code CLI (Pro
+#                          subscription, OAuth — no opencode-go tokens used)
+# AGENT_BACKEND=opencode → researcher + builder run via opencode-go (fallback)
+AGENT_BACKEND="${AGENT_BACKEND:-claude}"
+RESEARCHER_MODEL="opencode-go/glm-5.2"       # analysis only — cheap + strong (opencode backend)
+BUILDER_MODEL="opencode-go/deepseek-v4-pro"  # implementation — quality matters most (opencode backend)
 
 log() { echo "[$(date '+%F %T')] $1" | tee -a "$RUN_LOG"; }
+
+# Run one LLM agent step. Backend-aware:
+#   claude   → claude -p (print mode, Pro OAuth) with context files appended
+#   opencode → opencode run --model <MODEL> -f <FILES>
+# Prints to the phase log; returns non-zero on failure.
+run_agent() {
+  local ROLE="$1" KEY="$2" MODEL="$3" PROMPT="$4" LOGFILE="$5"
+  shift 5
+  if [ "$AGENT_BACKEND" = "claude" ]; then
+    local CTX=""
+    # Claude loads CLAUDE.md + AGENTS.md automatically; append role/spec files
+    # via --append-system-prompt-file (only existing files, no hard-fail).
+    for f in "$@"; do
+      [ -f "$f" ] && CTX="$CTX --append-system-prompt-file \"$f\""
+    done
+    # shellcheck disable=SC2086
+    eval claude -p "$PROMPT" --permission-mode bypassPermissions --max-turns 60 --verbose $CTX >> "$LOGFILE" 2>&1
+  else
+    local FILES=()
+    for f in "$@"; do
+      [ -f "$f" ] && FILES+=(-f "$f")
+    done
+    opencode run "$PROMPT" --model "$MODEL" "${FILES[@]}" >> "$LOGFILE" 2>&1
+  fi
+}
 
 # ── phase table: key|spec|branch|pr-title ──
 PHASES=(
@@ -33,10 +62,11 @@ run_phase() {
   local KEY="$1" SPEC="$2" BRANCH="$3" TITLE="$4"
   log "════════ PHASE $KEY ════════"
 
-  # ── 1. RESEARCHER (glm-5.2) ──
-  log "  [researcher] analyzing $SPEC → TASKS + RISKS"
-  opencode run "You are the RESEARCHER for Able phase $KEY. YOUR FIRST ACTION: use the write_file tool to create docs/phase-reports/${KEY}-TASKS.md (numbered task checklist for this phase per $SPEC and ORCHESTRATOR.md section 4) and docs/phase-reports/${KEY}-RISKS.md (risks + mitigations). WRITE THE FILES FIRST — do not stop to read long specs first; keep each file under 60 lines. Then reply DONE." \
-    --model "$RESEARCHER_MODEL" -f ORCHESTRATOR.md -f AGENTS/researcher.md >> build-logs/researcher-$KEY.log 2>&1 \
+  # ── 1. RESEARCHER (backend-aware) ──
+  log "  [researcher] analyzing $SPEC → TASKS + RISKS ($AGENT_BACKEND)"
+  run_agent researcher "$KEY" "$RESEARCHER_MODEL" \
+    "You are the RESEARCHER for Able phase $KEY. YOUR FIRST ACTION: use the write_file tool to create docs/phase-reports/${KEY}-TASKS.md (numbered task checklist for this phase per $SPEC and ORCHESTRATOR.md section 4) and docs/phase-reports/${KEY}-RISKS.md (risks + mitigations). WRITE THE FILES FIRST — do not stop to read long specs first; keep each file under 60 lines. Then reply DONE." \
+    "build-logs/researcher-$KEY.log" ORCHESTRATOR.md AGENTS/researcher.md \
     || log "  ⚠ researcher non-zero exit (check build-logs/researcher-$KEY.log)"
   [ -f "docs/phase-reports/${KEY}-TASKS.md" ] && log "  ✅ researcher: TASKS + RISKS written" || log "  ⚠ researcher produced no TASKS — continuing with spec only"
 
@@ -52,18 +82,19 @@ run_phase() {
   # ── 2+3. BUILDER loop (max 5 attempts) ──
   local attempt=1
   while [ "$attempt" -le 5 ]; do
-    log "  [builder] attempt $attempt/5 (deepseek-v4-pro)"
+    log "  [builder] attempt $attempt/5 ($AGENT_BACKEND)"
     local FEEDBACK=""
     [ -f build-logs/verify-$KEY.log ] && FEEDBACK="The previous verifier run FAILED. Fix exactly these failures: $(tail -60 build-logs/verify-$KEY.log)"
 
-    # Attach files ONLY if they exist — opencode hard-fails on missing -f files.
-    # Use a bash array so filenames never get mangled by quoting.
-    local FILES=(-f ORCHESTRATOR.md -f AGENTS/builder.md -f "$SPEC" -f AGENTS.md)
-    [ -f "docs/phase-reports/${KEY}-TASKS.md" ] && FILES+=(-f "docs/phase-reports/${KEY}-TASKS.md")
-    [ -f "docs/phase-reports/${KEY}-RISKS.md" ] && FILES+=(-f "docs/phase-reports/${KEY}-RISKS.md")
+    # Context files — attached only if they exist (both backends tolerate
+    # missing files; opencode hard-fails on missing -f args, so gate here).
+    local FILES=(ORCHESTRATOR.md AGENTS/builder.md "$SPEC" AGENTS.md)
+    [ -f "docs/phase-reports/${KEY}-TASKS.md" ] && FILES+=("docs/phase-reports/${KEY}-TASKS.md")
+    [ -f "docs/phase-reports/${KEY}-RISKS.md" ] && FILES+=("docs/phase-reports/${KEY}-RISKS.md")
 
-    opencode run "You are the BUILDER for Able. Read ORCHESTRATOR.md, AGENTS/builder.md, $SPEC, AGENTS.md. Execute the builder role for phase $KEY. ${FEEDBACK} Follow AGENTS/builder.md exactly: implement the phase per the spec, add tests, run npm run verify and the browser tests until green, then commit. IMPORTANT: you must actually change code — the verifier fails if your branch has no commits." \
-      --model "$BUILDER_MODEL" "${FILES[@]}" >> build-logs/builder-$KEY-$attempt.log 2>&1
+    run_agent builder "$KEY" "$BUILDER_MODEL" \
+      "You are the BUILDER for Able. Read ORCHESTRATOR.md, AGENTS/builder.md, $SPEC, AGENTS.md. Execute the builder role for phase $KEY. ${FEEDBACK} Follow AGENTS/builder.md exactly: implement the phase per the spec, add tests, run npm run verify and the browser tests until green, then commit. IMPORTANT: you must actually change code — the verifier fails if your branch has no commits." \
+      "build-logs/builder-$KEY-$attempt.log" "${FILES[@]}"
     log "  [builder] attempt $attempt finished (log: build-logs/builder-$KEY-$attempt.log)"
 
     # ── VERIFIER (deterministic) ──
