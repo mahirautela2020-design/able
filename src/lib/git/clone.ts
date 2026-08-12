@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { parseGitUrl, validateGitHost } from "@/lib/ssrf";
 
-const MAX_REPO_SIZE_MB = 500;
+export const MAX_REPO_SIZE_MB = 500;
 const CLONE_TIMEOUT_MS = 300_000; // 5 minutes
 
 export interface CloneResult {
@@ -50,10 +50,7 @@ export async function cloneRepo(repoUrl: string, auditId: string): Promise<Clone
       throw new Error(`git clone failed: ${result.stderr?.slice(0, 200)}`);
     }
 
-    const sizeMb = getDirectorySize(sandboxDir);
-    if (sizeMb > MAX_REPO_SIZE_MB) {
-      throw new Error(`Repo size ${sizeMb}MB exceeds cap of ${MAX_REPO_SIZE_MB}MB`);
-    }
+    assertRepoSizeWithinCap(getDirectorySize(sandboxDir));
 
     const commitSha = execSync("git rev-parse HEAD", {
       cwd: sandboxDir,
@@ -118,7 +115,14 @@ export function validateSandboxPath(clonePath: string): void {
   }
 }
 
-function getDirectorySize(dir: string): number {
+/** Abort the clone if the checked-out tree exceeds the disk-bomb cap (RISKS #6). */
+export function assertRepoSizeWithinCap(sizeMb: number): void {
+  if (sizeMb > MAX_REPO_SIZE_MB) {
+    throw new Error(`Repo size ${sizeMb}MB exceeds cap of ${MAX_REPO_SIZE_MB}MB`);
+  }
+}
+
+export function getDirectorySize(dir: string): number {
   let totalBytes = 0;
   try {
     function walk(dirPath: string) {

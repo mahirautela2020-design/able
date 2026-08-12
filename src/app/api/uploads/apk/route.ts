@@ -8,7 +8,24 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const MAX_APK_SIZE_MB = 200;
+export const MAX_APK_SIZE_MB = 200;
+
+export interface ApkSizeResult {
+  ok: boolean;
+  error?: string;
+}
+
+/** Reject oversized uploads before they hit memory/storage (RISKS #3 — size bomb). */
+export function checkApkSize(sizeBytes: number): ApkSizeResult {
+  const sizeMb = sizeBytes / (1024 * 1024);
+  if (sizeMb > MAX_APK_SIZE_MB) {
+    return {
+      ok: false,
+      error: `File too large: ${sizeMb.toFixed(1)}MB exceeds ${MAX_APK_SIZE_MB}MB limit`,
+    };
+  }
+  return { ok: true };
+}
 
 /** Strip path separators and control chars so a user-supplied filename can't
  * traverse the storage key space (e.g. "../../other/audit/x.apk"). */
@@ -44,12 +61,9 @@ export async function POST(request: Request) {
       return Response.json({ error: "Only .apk files are accepted" }, { status: 400 });
     }
 
-    const sizeMb = file.size / (1024 * 1024);
-    if (sizeMb > MAX_APK_SIZE_MB) {
-      return Response.json(
-        { error: `File too large: ${sizeMb.toFixed(1)}MB exceeds ${MAX_APK_SIZE_MB}MB limit` },
-        { status: 413 }
-      );
+    const sizeCheck = checkApkSize(file.size);
+    if (!sizeCheck.ok) {
+      return Response.json({ error: sizeCheck.error }, { status: 413 });
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
