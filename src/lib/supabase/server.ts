@@ -245,3 +245,66 @@ export async function createSignedUrl(
   if (error) throw error;
   return data.signedUrl;
 }
+
+// ─── Figma OAuth connections ──────────────────────────────────────────────
+
+export interface FigmaConnection {
+  id: string;
+  user_id: string;
+  access_token: string;
+  refresh_token: string | null;
+  expires_at: string | null;
+  figma_user_id: string | null;
+  figma_user_name: string | null;
+}
+
+/** Fetch a user's saved Figma OAuth connection (null if not connected). */
+export async function getFigmaConnection(
+  userId: string
+): Promise<FigmaConnection | null> {
+  const { data, error } = await supabase
+    .from("figma_connections")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as FigmaConnection | null) ?? null;
+}
+
+/** Upsert a user's Figma OAuth connection after a successful exchange. */
+export async function saveFigmaConnection(
+  userId: string,
+  token: {
+    access_token: string;
+    refresh_token?: string | null;
+    expires_at?: string | null;
+    figma_user_id?: string | null;
+    figma_user_name?: string | null;
+  }
+): Promise<void> {
+  const { error } = await supabase.from("figma_connections").upsert(
+    {
+      user_id: userId,
+      access_token: token.access_token,
+      refresh_token: token.refresh_token ?? null,
+      expires_at: token.expires_at ?? null,
+      figma_user_id: token.figma_user_id ?? null,
+      figma_user_name: token.figma_user_name ?? null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" }
+  );
+
+  if (error) throw error;
+}
+
+/** Remove a user's Figma connection (disconnect). */
+export async function deleteFigmaConnection(userId: string): Promise<void> {
+  const { error } = await supabase
+    .from("figma_connections")
+    .delete()
+    .eq("user_id", userId);
+
+  if (error) throw error;
+}

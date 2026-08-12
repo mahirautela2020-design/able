@@ -1,15 +1,20 @@
 import { isFigmaAuditPublic } from "@/lib/env.server";
+import { requireSession } from "@/lib/supabase/session";
+import { getFigmaConnection } from "@/lib/supabase/server";
 import { getFile, getNode } from "@/lib/figma/client";
 import { parseFigmaFile, collectFillableNodes, collectTextNodes } from "@/lib/figma/parse";
 import { extractColorPairs, checkContrastPairs } from "@/lib/audit/image-contrast";
 import { checkImageAlt } from "@/lib/audit/image-alt";
 
 export async function POST(request: Request) {
+  // Authenticate: the caller must be a logged-in user (their OAuth token is
+  // used to fetch THEIR Figma files). FIGMA_AUDIT_PUBLIC=true keeps the
+  // anonymous/demo path working with the global PAT.
+  let userId: string | null = null;
   if (!isFigmaAuditPublic()) {
-    return Response.json(
-      { error: "Figma audit is disabled: set FIGMA_AUDIT_PUBLIC=true or add RBAC" },
-      { status: 401 }
-    );
+    const auth = await requireSession(request);
+    if (!auth.ok) return auth.response;
+    userId = auth.userId;
   }
 
   try {
@@ -20,11 +25,24 @@ export async function POST(request: Request) {
       return Response.json({ error: "fileKey is required" }, { status: 400 });
     }
 
-    const file = await getFile(fileKey);
+    // Per-user OAuth token when authenticated (their files), else PAT fallback.
+    let token: string | null = null;
+    if (userId) {
+      const conn = await getFigmaConnection(userId);
+      token = conn?.access_token ?? null;
+      if (!token) {
+        return Response.json(
+          { error: "Connect your Figma account first (Connect Figma button)" },
+          { status: 401 }
+        );
+      }
+    }
+
+    const file = await getFile(fileKey, token);
 
     let nodeData: unknown;
     if (nodeId) {
-      const node = await getNode(fileKey, nodeId);
+      const node = await getNode(fileKey, nodeId, token);
       if (!node) {
         return Response.json({ error: `Node ${nodeId} not found` }, { status: 404 });
       }
