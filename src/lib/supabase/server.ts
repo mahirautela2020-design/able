@@ -188,13 +188,21 @@ export async function getRecentAudits(limit = 10) {
  * and the evidence storage folder). Returns true if the audit existed.
  */
 export async function deleteAudit(auditId: string): Promise<boolean> {
-  // 1. Delete evidence from storage first (folder = auditId/)
-  const { error: storageError } = await supabase.storage
-    .from("evidence")
-    .remove([`${auditId}`]);
+  // 1. Delete evidence from storage first (folder = auditId/).
+  //    NOTE: storage.remove() matches exact object paths, not prefixes, so
+  //    pass the full paths of every object under the folder. Best-effort:
+  //    list → remove each; a missing folder is not an error.
+  try {
+    const { data: objects } = await supabase.storage
+      .from("evidence")
+      .list(auditId, { limit: 500 });
 
-  if (storageError && !storageError.message?.includes("not found")) {
-    throw storageError;
+    if (objects && objects.length > 0) {
+      const paths = objects.map((o) => `${auditId}/${o.name}`);
+      await supabase.storage.from("evidence").remove(paths);
+    }
+  } catch {
+    // best-effort — DB delete proceeds even if storage cleanup fails
   }
 
   // 2. Delete the audit row — findings + pages cascade (ON DELETE CASCADE)

@@ -1,6 +1,22 @@
 -- P6 Enterprise RLS migration
 -- Org-scoped row-level security policies for multi-tenant data isolation
 -- Requires: org_memberships + api_keys + audit_log tables created first
+--
+-- ORDER MATTERS: org_id must exist on the audits table BEFORE any policy
+-- references it (policies fail on missing columns). The ADD COLUMN block
+-- therefore runs first.
+
+-- Add org_id column to existing tables (if not already present)
+-- Safe to run: uses IF NOT EXISTS pattern
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'audits' AND column_name = 'org_id'
+  ) THEN
+    ALTER TABLE audits ADD COLUMN org_id uuid;
+  END IF;
+END $$;
 
 -- Org memberships table (tracks user membership in organizations)
 CREATE TABLE IF NOT EXISTS org_memberships (
@@ -47,6 +63,7 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON audit_log(actor);
 CREATE INDEX IF NOT EXISTS idx_audit_log_org ON audit_log(org_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_audits_org ON audits(org_id);
 
 -- Enable RLS on new tables
 ALTER TABLE org_memberships ENABLE ROW LEVEL SECURITY;
@@ -110,15 +127,3 @@ CREATE POLICY "audit_log_org_select" ON audit_log
 CREATE POLICY "audit_log_org_insert" ON audit_log
   FOR INSERT
   WITH CHECK (org_id = (auth.jwt() ->> 'org_id')::uuid);
-
--- Add org_id column to existing tables (if not already present)
--- Safe to run: uses IF NOT EXISTS pattern
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'audits' AND column_name = 'org_id'
-  ) THEN
-    ALTER TABLE audits ADD COLUMN org_id uuid;
-  END IF;
-END $$;

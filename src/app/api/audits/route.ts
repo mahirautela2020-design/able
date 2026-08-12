@@ -1,5 +1,6 @@
 import { sanitizeUrl, validateHost } from "@/engine/crawl";
 import { insertAudit, getRecentAudits, deleteAudit } from "@/lib/supabase/server";
+import { requireSession } from "@/lib/supabase/session";
 import { inngest } from "@/inngest/client";
 
 export async function POST(request: Request) {
@@ -61,6 +62,10 @@ export async function GET() {
 }
 
 export async function DELETE(request: Request) {
+  // Destructive operation — require a valid session (enterprise-grade).
+  const auth = await requireSession(request);
+  if (!auth.ok) return auth.response;
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");

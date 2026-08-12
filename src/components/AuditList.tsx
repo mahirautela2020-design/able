@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/lib/supabase/client";
 import Link from "next/link";
 
 interface Audit {
@@ -43,8 +44,14 @@ export function AuditList() {
   async function handleDelete(id: string) {
     setDeleting(true);
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       const res = await fetch(`/api/audits?id=${encodeURIComponent(id)}`, {
         method: "DELETE",
+        headers: session
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : undefined,
       });
       if (res.ok) {
         setAudits((prev) => prev.filter((a) => a.id !== id));
