@@ -14,12 +14,13 @@ per-criterion compliance matrix, W3C maturity scoring, and 16:9 PDF reports.
 | **Figma** | Design files — contrast, touch targets, image alt (OAuth2, per-user) |
 | **UI screenshot** | Upload an image — vision-model advisory suggestions |
 | **APK** | Android package — aapt2 manifest + dynamic emulator testing |
+| **iOS (.ipa)** | iOS bundle — Info.plist + icon asset static analysis + guided VoiceOver checklist |
 
 ## Why it's "best value"
 
 - **Same engine as the leaders** — axe-core is what axe DevTools, Lighthouse,
   and Microsoft Accessibility Insights wrap; ScanA11y uses it directly.
-- **One platform, five modes** — no four-tool stack.
+- **One platform, six modes** — no four-tool stack.
 - **Zero paid APIs in the audit pipeline** — all engines are open source.
 - **LLM discipline** — vision models only *suggest* (needs_review bucket);
   they never create hard findings. Contrast is deterministic color math.
@@ -72,11 +73,25 @@ supabase link --project-ref <ref>
 supabase db push
 ```
 
+## iOS (.ipa) static analysis — honest limits
+
+Uploading an `.ipa` runs **static analysis only** — the bundle is unzipped and
+its `Info.plist` (XML or binary) plus icon assets are inspected for
+accessibility-relevant metadata. Because bundle metadata **cannot prove a live
+failure**, every static result is a `needs_review` flag, never a hard violation.
+
+**Dynamic iOS testing genuinely requires macOS / Xcode.** No tool on a Windows
+or Linux host can drive the iOS Simulator. ScanA11y is honest about this: the
+dynamic part ships as a **guided VoiceOver / Simulator checklist** the operator
+completes on a Mac — the industry-standard manual step, not a fabricated result.
+
 ## Roadmap (honest gaps)
 
-iOS .ipa automation (needs macOS/Xcode), TalkBack automation
-(manual/guided today — industry-wide limitation),
-deterministic UI-element detection (OmniParser/supervision).
+iOS dynamic testing (VoiceOver on Simulator — needs macOS/Xcode),
+TalkBack automation (manual/guided today — industry-wide limitation),
+screen-reader automation on web (manual/guided today),
+deterministic UI-element detection (OmniParser/supervision — P8 shipped
+element bounding boxes; full OmniParser integration still open).
 
 ## License
 
