@@ -21,7 +21,7 @@ is_placeholder() {
 ok=1
 while IFS='=' read -r k v; do
   [ -z "$k" ] && continue
-  v="${v%%[[:space:]]*}"
+  v="$(printf '%s' "$v" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"  # trim both ends (MSYS bash %%[[:space:]] is broken)
   case "$k" in
     NEXT_PUBLIC_SUPABASE_URL)
       if is_placeholder "$v" || ! [[ "$v" =~ ^https://[a-z0-9]+\.supabase\.co$ ]]; then
