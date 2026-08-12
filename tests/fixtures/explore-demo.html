@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Explore Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 32px; background: #ffffff; color: #111; }
+    h1 { margin-top: 0; }
+    .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+    .bad-contrast { color: #7a7a7a; background-color: #ffffff; border: 1px solid #cccccc; padding: 8px 16px; font-size: 16px; }
+    .tiny-link { display: inline-block; width: 20px; height: 20px; font-size: 10px; line-height: 20px; text-align: center; background: #eeeeee; overflow: hidden; }
+    .status-chip { color: #000000; background-color: #009900; padding: 4px 10px; border-radius: 4px; }
+    .no-focus:focus { outline: none; }
+    .mislabeled { }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Explore demo</h1>
+
+    <div class="row">
+      <button id="cta" class="bad-contrast" data-role="button" data-name="Subscribe">Subscribe</button>
+      <img id="banner" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="280" height="80" />
+      <a id="tiny" class="tiny-link" href="#tiny" data-role="link" data-name="x">x</a>
+      <label>Search</label>
+      <input id="search" type="text" data-role="textbox" data-name="Search" />
+      <span id="chip" class="status-chip" data-role="status" data-name="Available">Available</span>
+    </div>
+
+    <!-- tab-order quirk: DOM order (Third, First, Second) differs from reading order -->
+    <div class="row">
+      <a id="tab3" class="no-focus" href="#tab3">Third</a>
+      <a id="tab1" href="#tab1">First</a>
+      <a id="tab2" href="#tab2">Second</a>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      function rgbToHex(str) {
+        var m = str.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        if (!m) return "#000000";
+        function to2(n) { return Number(n).toString(16).padStart(2, "0"); }
+        return "#" + to2(m[1]) + to2(m[2]) + to2(m[3]);
+      }
+      function resolveBg(el) {
+        var cur = el;
+        while (cur) {
+          var bg = getComputedStyle(cur).backgroundColor;
+          if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") return rgbToHex(bg);
+          cur = cur.parentElement;
+        }
+        return "#ffffff";
+      }
+      function roleOf(el) {
+        if (el.getAttribute("data-role")) return el.getAttribute("data-role");
+        var role = el.getAttribute("role");
+        if (role) return role;
+        var tag = el.tagName.toLowerCase();
+        if (tag === "button") return "button";
+        if (tag === "a") return "link";
+        if (tag === "img") return "img";
+        if (tag === "input") return (el.type === "checkbox" || el.type === "radio") ? el.type : "textbox";
+        if (tag === "select") return "combobox";
+        if (tag === "textarea") return "textbox";
+        if (/^h[1-6]$/.test(tag)) return "heading";
+        if (tag === "main") return "main";
+        if (tag === "nav") return "navigation";
+        if (tag === "header") return "banner";
+        if (tag === "footer") return "contentinfo";
+        return tag;
+      }
+      function nameOf(el) {
+        if (el.getAttribute("data-name")) return el.getAttribute("data-name");
+        if (el.getAttribute("aria-label")) return el.getAttribute("aria-label");
+        if (el.tagName.toLowerCase() === "img") return el.getAttribute("alt") || "";
+        return (el.textContent || "").trim().slice(0, 60);
+      }
+      function cssSelector(el) {
+        if (el.id) return "#" + el.id;
+        var sel = el.tagName.toLowerCase();
+        if (el.className && typeof el.className === "string") {
+          var cls = el.className.trim().split(/\s+/).filter(Boolean).slice(0, 1);
+          if (cls.length) sel += "." + cls[0];
+        }
+        return sel;
+      }
+      function inspect(x, y) {
+        var el = document.elementFromPoint(x, y);
+        if (!el || el === document.documentElement || el === document.body) return null;
+        var rect = el.getBoundingClientRect();
+        var cs = getComputedStyle(el);
+        var aria = {};
+        for (var i = 0; i < el.attributes.length; i++) {
+          var attr = el.attributes[i];
+          if (/^aria-/i.test(attr.name)) aria[attr.name] = attr.value;
+        }
+        var ancestors = [];
+        var cur = el.parentElement;
+        while (cur && cur !== document.body && ancestors.length < 8) {
+          var r = roleOf(cur);
+          if (r) ancestors.push(r);
+          cur = cur.parentElement;
+        }
+        return {
+          role: roleOf(el),
+          name: nameOf(el),
+          tag: el.tagName.toLowerCase(),
+          selector: cssSelector(el),
+          aria: aria,
+          fontSize: cs.fontSize,
+          touchTarget: { width: Math.round(rect.width), height: Math.round(rect.height) },
+          tabIndex: el.tabIndex >= 0 ? el.tabIndex : null,
+          ancestors: ancestors,
+          bbox: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          computed: { color: rgbToHex(cs.color), backgroundColor: resolveBg(el) }
+        };
+      }
+      function focusables() {
+        var els = document.querySelectorAll('a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        var out = [];
+        for (var i = 0; i < els.length; i++) {
+          var el = els[i];
+          var rect = el.getBoundingClientRect();
+          if (rect.width === 0 && rect.height === 0) continue;
+          out.push({ selector: cssSelector(el), label: nameOf(el) || el.tagName.toLowerCase(), bbox: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+        }
+        return out;
+      }
+      function contrastPairs() {
+        var seen = {};
+        var pairs = [];
+        var els = document.querySelectorAll("button, a, input, span, h1, h2, h3, p, label, [data-role]");
+        for (var i = 0; i < els.length; i++) {
+          var el = els[i];
+          var rect = el.getBoundingClientRect();
+          if (rect.width === 0 && rect.height === 0) continue;
+          var fg = rgbToHex(getComputedStyle(el).color);
+          var bg = resolveBg(el);
+          var key = fg + "|" + bg;
+          if (seen[key]) continue;
+          seen[key] = 1;
+          pairs.push({ fg: fg, bg: bg, selector: cssSelector(el), label: nameOf(el) || el.tagName.toLowerCase() });
+        }
+        return pairs;
+      }
+      function clearHighlight() {
+        var nodes = document.querySelectorAll(".__able-highlight");
+        for (var i = 0; i < nodes.length; i++) nodes[i].remove();
+      }
+      function highlight(selector) {
+        clearHighlight();
+        var el = document.querySelector(selector);
+        if (!el) return false;
+        var rect = el.getBoundingClientRect();
+        var overlay = document.createElement("div");
+        overlay.className = "__able-highlight";
+        overlay.style.cssText = "position:fixed;border:2px solid #e11d48;background:rgba(225,29,72,0.12);z-index:99999;pointer-events:none;" +
+          "left:" + rect.left + "px;top:" + rect.top + "px;width:" + rect.width + "px;height:" + rect.height + "px;";
+        document.body.appendChild(overlay);
+        return true;
+      }
+      function highlightByRoleName(role, name) {
+        clearHighlight();
+        var el = document.querySelector('[data-role="' + role + '"][data-name="' + name + '"]');
+        if (!el) {
+          var all = document.querySelectorAll("*");
+          for (var i = 0; i < all.length; i++) {
+            if (roleOf(all[i]) === role && nameOf(all[i]) === name) { el = all[i]; break; }
+          }
+        }
+        if (!el) return false;
+        return highlight(cssSelector(el));
+      }
+      function patch(selector, styles) {
+        var el = document.querySelector(selector);
+        if (!el) return false;
+        for (var k in styles) el.style[k] = styles[k];
+        return true;
+      }
+      function focusEl(selector) {
+        var el = document.querySelector(selector);
+        if (!el) return false;
+        el.focus();
+        return true;
+      }
+      function setFilter(filter) {
+        document.body.style.filter = (!filter || filter === "none") ? "" : filter;
+        return true;
+      }
+
+      window.__ableInspect = {
+        inspect: inspect,
+        focusables: focusables,
+        contrastPairs: contrastPairs,
+        highlight: highlight,
+        highlightByRoleName: highlightByRoleName,
+        patch: patch,
+        focusEl: focusEl,
+        setFilter: setFilter,
+        clearHighlight: clearHighlight
+      };
+
+      window.addEventListener("message", function (ev) {
+        var msg = ev.data || {};
+        if (!msg || typeof msg !== "object" || typeof msg.type !== "string" || msg.type.indexOf("able:") !== 0) return;
+        switch (msg.type) {
+          case "able:inspect":
+            window.parent && window.parent.postMessage({ type: "able:inspect:result", element: inspect(msg.x, msg.y) }, "*");
+            break;
+          case "able:focusables":
+            window.parent && window.parent.postMessage({ type: "able:focusables:result", items: focusables() }, "*");
+            break;
+          case "able:contrast-pairs":
+            window.parent && window.parent.postMessage({ type: "able:contrast-pairs:result", pairs: contrastPairs() }, "*");
+            break;
+          case "able:patch":
+            window.parent && window.parent.postMessage({ type: "able:patch:result", ok: patch(msg.selector, msg.styles) }, "*");
+            break;
+          case "able:highlight":
+            window.parent && window.parent.postMessage({ type: "able:highlight:result", ok: highlight(msg.selector) }, "*");
+            break;
+          case "able:highlight-role-name":
+            window.parent && window.parent.postMessage({ type: "able:highlight:result", ok: highlightByRoleName(msg.role, msg.name) }, "*");
+            break;
+          case "able:focus":
+            window.parent && window.parent.postMessage({ type: "able:focus:result", ok: focusEl(msg.selector) }, "*");
+            break;
+          case "able:set-filter":
+            window.parent && window.parent.postMessage({ type: "able:set-filter:result", ok: setFilter(msg.filter) }, "*");
+            break;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

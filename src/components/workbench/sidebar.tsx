@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   FileSearch,
   Layers,
+  ScanSearch,
   type LucideIcon,
 } from "lucide-react";
 
@@ -23,6 +24,7 @@ export function Sidebar({ auditId }: { auditId: string }) {
     { label: "Scope", href: `/scope/${auditId}`, icon: ClipboardCheck },
     { label: "Findings", href: `/scope/${auditId}/findings`, icon: FileSearch },
     { label: "AX Snapshots", href: `/scope/${auditId}/snapshots/page-001`, icon: Layers },
+    { label: "Explore", href: `/scope/${auditId}/explore`, icon: ScanSearch },
   ];
 
   return (
