@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -50,17 +50,48 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [activeSc, setActiveSc] = useState<string | null>(null);
   const [activePrinciple, setActivePrinciple] = useState<string>("1");
   const [previewKey, setPreviewKey] = useState(0); // reload iframe
+  const [liveFindings, setLiveFindings] = useState<WorkbenchFinding[]>(findings);
+  const [status, setStatus] = useState(auditStatus);
+  const [progress, setProgress] = useState<Record<string, unknown> | null>(null);
+
+  // Live-poll while the audit is queued/running so the checklist fills in
+  // as pages finish. Stops once complete/failed.
+  useEffect(() => {
+    if (status !== "queued" && status !== "running") return;
+    let stopped = false;
+
+    const tick = async () => {
+      try {
+        const res = await fetch(`/api/audits/${auditId}/report`);
+        if (!res.ok) return;
+        const json = await res.json();
+        if (stopped) return;
+        setStatus(json.audit?.status ?? status);
+        setProgress(json.audit?.progress ?? null);
+        if (Array.isArray(json.findings)) setLiveFindings(json.findings);
+      } catch {
+        // transient — keep polling
+      }
+    };
+
+    tick();
+    const interval = setInterval(tick, 4000);
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+    };
+  }, [auditId, status]);
 
   const bySc = useMemo(() => {
     const map = new Map<string, WorkbenchFinding[]>();
-    for (const f of findings) {
+    for (const f of liveFindings) {
       const sc = f.wcag_criterion || "best-practice";
       const arr = map.get(sc) || [];
       arr.push(f);
       map.set(sc, arr);
     }
     return map;
-  }, [findings]);
+  }, [liveFindings]);
 
   const scList = useMemo(() => {
     const seen = new Map<string, { sc: string; count: number; worst: string }>();
@@ -89,7 +120,10 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
         <div className="p-3 border-b">
           <h2 className="text-sm font-semibold">Accessibility Checklist</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {findings.length} findings · {bySc.size} criteria affected
+            {liveFindings.length} findings · {bySc.size} criteria affected
+            {progress && typeof progress.pagesDone === "number" && typeof progress.pagesTotal === "number"
+              ? ` · ${progress.pagesDone}/${progress.pagesTotal} pages`
+              : ""}
           </p>
         </div>
 
@@ -157,8 +191,8 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
         {/* Toolbar */}
         <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/20">
           <div className="flex items-center gap-2 min-w-0">
-            <Badge variant={auditStatus === "complete" ? "outline" : "default"}>
-              {auditStatus}
+            <Badge variant={status === "complete" ? "outline" : "default"}>
+              {status}
             </Badge>
             <span className="text-xs font-mono text-muted-foreground truncate">
               {targetUrl}

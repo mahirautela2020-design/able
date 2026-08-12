@@ -35,7 +35,9 @@ export function AuditForm() {
 
       const data = await res.json();
       toast.success("Audit started");
-      router.push(`/audits/${data.id}`);
+      // Land in the live workbench: preview loads immediately, checklist
+      // fills in as findings arrive.
+      router.push(`/workbench/${data.id}`);
     } catch {
       toast.error("Failed to start audit");
     } finally {
