@@ -1,0 +1,11 @@
+{
+  "sections": [
+    { "criteria": "1.1.1 Non-text Content", "conformance": "Does Not Support" },
+    { "criteria": "1.4.3 Contrast (Minimum)", "conformance": "Does Not Support" },
+    { "criteria": "1.3.1 Info and Relationships", "conformance": "Partial" },
+    { "criteria": "3.3.2 Labels or Instructions", "conformance": "Partial" },
+    { "criteria": "4.1.2 Name, Role, Value", "conformance": "Does Not Support" },
+    { "criteria": "1.2.1 Audio-only and Video-only (Prerecorded)", "conformance": "Supports" },
+    { "criteria": "1.4.4 Resize Text", "conformance": "Supports" }
+  ]
+}

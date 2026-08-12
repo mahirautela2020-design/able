@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Live Region Test</title>
+</head>
+<body>
+  <div role="status" aria-live="polite" id="status-region">
+    Initial status message
+  </div>
+  <div role="alert" id="alert-region">
+    Alert message
+  </div>
+  <button id="trigger-btn">Trigger Update</button>
+  <script>
+    document.getElementById("trigger-btn").addEventListener("click", () => {
+      document.getElementById("status-region").textContent = "Updated status: " + Date.now();
+    });
+  </script>
+</body>
+</html>
