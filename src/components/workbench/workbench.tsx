@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getWcagRegistry, type WcagSuccessCriterion } from "@/engine/wcag-registry";
+import { supabase } from "@/lib/supabase/client";
 
 export interface WorkbenchFinding {
   id: string;
@@ -54,6 +55,8 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [levelFilter, setLevelFilter] = useState<"ALL" | "A" | "AA" | "AAA">("ALL");
   const [previewKey, setPreviewKey] = useState(0); // reload iframe
   const [frameBlocked, setFrameBlocked] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [startedAt] = useState(() => Date.now());
   const [liveFindings, setLiveFindings] = useState<WorkbenchFinding[]>(findings);
   const [status, setStatus] = useState(auditStatus);
   const [progress, setProgress] = useState<Record<string, unknown> | null>(null);
@@ -158,6 +161,50 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
     [liveFindings]
   );
 
+  // ETA: per-page rate × remaining pages. Only when we have real progress.
+  const etaSeconds = useMemo(() => {
+    if (
+      status !== "running" ||
+      !progress ||
+      typeof progress.pagesDone !== "number" ||
+      typeof progress.pagesTotal !== "number" ||
+      progress.pagesDone < 1
+    ) {
+      return null;
+    }
+    const elapsed = (Date.now() - startedAt) / 1000;
+    const perPage = elapsed / progress.pagesDone;
+    const remaining = progress.pagesTotal - progress.pagesDone;
+    return Math.max(5, Math.round(perPage * remaining));
+  }, [status, progress, startedAt]);
+
+  /** Download the 16:9 PDF with the session token (endpoint is auth-gated). */
+  async function handleDownloadPdf() {
+    setDownloadingPdf(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const res = await fetch(`/api/audits/${auditId}/pdf`, {
+        headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
+      if (!res.ok) throw new Error(`PDF request failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `scana11y-report-${auditId.slice(0, 8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("PDF download failed:", e);
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }
+
   return (
     <div className="flex h-full border rounded-lg overflow-hidden bg-background">
       {/* ── LEFT: WCAG checklist ── */}
@@ -256,23 +303,127 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
 
       {/* ── RIGHT: live preview + findings ── */}
       <main className="flex-1 flex flex-col min-w-0">
-        {/* Toolbar */}
-        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/20">
-          <div className="flex items-center gap-2 min-w-0">
-            <Badge variant={status === "complete" ? "outline" : "default"}>
-              {status}
-            </Badge>
-            <span className="text-xs font-mono text-muted-foreground truncate">
-              {targetUrl}
-            </span>
+        {/* Audit status bar */}
+        <div className="px-3 py-2 border-b bg-muted/20 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3 min-w-0">
+            {status === "running" || status === "queued" ? (
+              <>
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary" />
+                </span>
+                <span className="text-sm font-medium">
+                  Audit in progress…
+                </span>
+                {progress && (
+                  <span className="text-xs text-muted-foreground font-mono">
+                    {typeof progress.pagesDone === "number" && typeof progress.pagesTotal === "number"
+                      ? `${progress.pagesDone}/${progress.pagesTotal} pages`
+                      : "starting…"}
+                    {etaSeconds !== null && ` · ~${etaSeconds}s left`}
+                  </span>
+                )}
+              </>
+            ) : status === "complete" ? (
+              <>
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                </span>
+                <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                  Audit complete
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {liveFindings.length} findings · {bySc.size} criteria affected
+                </span>
+              </>
+            ) : status === "failed" ? (
+              <>
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+                </span>
+                <span className="text-sm font-medium text-red-600 dark:text-red-400">
+                  Audit failed
+                </span>
+              </>
+            ) : (
+              <>
+                <Badge variant="outline">{status}</Badge>
+              </>
+            )}
           </div>
-          <button
-            onClick={() => setPreviewKey((k) => k + 1)}
-            className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
-          >
-            Reload preview
-          </button>
+
+          <div className="flex items-center gap-2">
+            <a
+              href={targetUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
+            >
+              Open live site
+            </a>
+            <button
+              onClick={() => setPreviewKey((k) => k + 1)}
+              className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
+            >
+              Reload preview
+            </button>
+            {status === "complete" && (
+              <>
+                <button
+                  onClick={() => (window.location.href = "/")}
+                  className="text-xs px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
+                >
+                  New audit
+                </button>
+                <button
+                  onClick={handleDownloadPdf}
+                  disabled={downloadingPdf}
+                  className="text-xs px-2.5 py-1 rounded-md border hover:bg-accent/50 transition-colors disabled:opacity-50"
+                >
+                  {downloadingPdf ? "Preparing…" : "Download PDF"}
+                </button>
+              </>
+            )}
+          </div>
         </div>
+
+        {/* Progress bar while running */}
+        {status === "running" && progress && typeof progress.pagesDone === "number" && typeof progress.pagesTotal === "number" && (
+          <div className="h-1 bg-muted">
+            <div
+              className="h-full bg-primary transition-all duration-500"
+              style={{
+                width: `${Math.min(100, (progress.pagesDone / Math.max(1, progress.pagesTotal)) * 100)}%`,
+              }}
+            />
+          </div>
+        )}
+
+        {/* Preview-blocked prompt: audit continues without preview */}
+        {frameBlocked && (
+          <div className="flex items-center justify-between gap-3 px-3 py-2 border-b bg-amber-50 dark:bg-amber-950/40 text-xs">
+            <p className="text-amber-800 dark:text-amber-300 min-w-0">
+              <span className="font-medium">{targetUrl}</span> blocks embedding — the
+              audit runs normally without the preview{firstScreenshot ? ", showing the captured screenshot instead" : ""}.
+            </p>
+            <div className="flex items-center gap-2 shrink-0">
+              <a
+                href={targetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2 py-1 rounded border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+              >
+                Open in new tab
+              </a>
+              <button
+                onClick={() => setFrameBlocked(false)}
+                className="px-2 py-1 rounded border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Preview: sandboxed live iframe; when the site blocks embedding
             (X-Frame-Options/CSP), show the full-page screenshot captured
