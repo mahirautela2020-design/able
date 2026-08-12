@@ -29,7 +29,10 @@ export interface ContrastFinding {
   evidence: { pair: ContrastPair };
 }
 
-function contrastRatio(color1: string, color2: string): number {
+/** WCAG 2.x contrast ratio between two colors (hex or any colorjs.io parseable
+ * string). Exported so the Android dynamic screenshot checks reuse the SAME
+ * implementation (never a second contrast engine). */
+export function contrastRatio(color1: string, color2: string): number {
   const c1 = new Color(color1);
   const c2 = new Color(color2);
   const l1 = relativeLuminance(c1);

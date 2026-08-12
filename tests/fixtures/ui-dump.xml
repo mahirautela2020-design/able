@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+<hierarchy rotation="0">
+  <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.example.a11ytest" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,0][1080,2340]">
+    <node index="0" text="" resource-id="android:id/statusBarBackground" class="android.view.View" package="com.example.a11ytest" content-desc="" clickable="false" bounds="[0,0][1080,72]"/>
+    <node index="1" text="" resource-id="" class="android.widget.LinearLayout" package="com.example.a11ytest" content-desc="" clickable="false" bounds="[0,72][1080,2340]">
+      <node index="0" text="Welcome to A11y Test" resource-id="" class="android.widget.TextView" package="com.example.a11ytest" content-desc="" clickable="false" bounds="[60,200][1020,260]"/>
+      <node index="1" text="" resource-id="com.example.a11ytest:id/btn_login" class="android.widget.Button" package="com.example.a11ytest" content-desc="" clickable="true" bounds="[60,400][1020,520]"/>
+      <node index="2" text="" resource-id="com.example.a11ytest:id/icon_settings" class="android.widget.ImageButton" package="com.example.a11ytest" content-desc="Settings" clickable="true" bounds="[990,1400][1050,1460]"/>
+      <node index="3" text="Log in" resource-id="com.example.a11ytest:id/btn_submit" class="android.widget.Button" package="com.example.a11ytest" content-desc="" clickable="true" bounds="[60,600][1020,680]"/>
+      <node index="4" text="Skip" resource-id="" class="android.widget.TextView" package="com.example.a11ytest" content-desc="" clickable="true" bounds="[80,700][120,716]"/>
+    </node>
+  </node>
+</hierarchy>

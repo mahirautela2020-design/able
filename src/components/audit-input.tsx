@@ -32,6 +32,18 @@ export function AuditInput() {
   const [result, setResult] = useState<{
     findings?: unknown[];
     summary?: Record<string, unknown>;
+    dynamic?: {
+      ran: boolean;
+      screens: Array<{
+        name: string;
+        findings: Array<{
+          ruleTitle?: string;
+          wcagCriterion?: string;
+          failureSummary?: string;
+          severity?: string;
+        }>;
+      }>;
+    };
     error?: string;
   } | null>(null);
   const router = useRouter();
@@ -111,7 +123,7 @@ export function AuditInput() {
         if (res.status === 401) toast.error(data.error);
         return;
       }
-      setResult({ findings: data.findings, summary: data.summary });
+      setResult({ findings: data.findings, summary: data.summary, dynamic: data.dynamic });
     } catch {
       toast.error("Request failed");
     } finally {
@@ -215,6 +227,32 @@ export function AuditInput() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+      {result?.dynamic?.ran && (
+        <div className="mt-4">
+          <p className="text-sm font-medium mb-2">Dynamic (emulator)</p>
+          {result.dynamic.screens.map((screen, i) => (
+            <div key={i} className="border rounded-md p-3 mb-2">
+              <p className="text-xs font-semibold mb-1">{screen.name}</p>
+              {screen.findings.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No issues on this screen.</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {screen.findings.map((f, j) => (
+                    <li key={j} className="text-xs bg-muted/50 rounded-md p-2">
+                      <span className="font-mono font-medium">{f.wcagCriterion ?? "—"}</span>{" "}
+                      <span className="font-medium">{f.ruleTitle ?? ""}</span>{" "}
+                      <span className="text-muted-foreground">({f.severity ?? ""})</span>
+                      <span className="text-muted-foreground block mt-0.5">
+                        {f.failureSummary ?? ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>
