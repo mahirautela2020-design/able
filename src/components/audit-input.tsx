@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Loader2, Globe, ImageIcon, Smartphone, PenTool } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { ConnectFigmaButton } from "@/components/connect-figma-button";
 
 type Mode = "url" | "figma" | "image" | "apk";
 
@@ -138,13 +139,21 @@ export function AuditInput() {
           />
         )}
         {mode === "figma" && (
-          <Input
-            type="text"
-            placeholder="https://www.figma.com/design/<fileKey>/Name or fileKey"
-            value={figmaInput}
-            onChange={(e) => setFigmaInput(e.target.value)}
-            disabled={loading}
-          />
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
+              <span className="text-xs text-muted-foreground">
+                Audit files from your connected Figma account
+              </span>
+              <ConnectFigmaButton />
+            </div>
+            <Input
+              type="text"
+              placeholder="https://www.figma.com/design/<fileKey>/Name or fileKey"
+              value={figmaInput}
+              onChange={(e) => setFigmaInput(e.target.value)}
+              disabled={loading}
+            />
+          </div>
         )}
         {(mode === "image" || mode === "apk") && (
           <label className="flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-md p-6 cursor-pointer hover:bg-accent/40 transition-colors text-center">

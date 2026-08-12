@@ -30,19 +30,19 @@ export interface VisionResult {
 }
 
 function getConfig() {
-  return {
-    apiKey:
-      process.env.GEMINI_API_KEY ??
-      process.env.GOOGLE_GENERATIVE_AI_API_KEY ??
-      process.env.OPENCODE_GO_API_KEY ??
-      null,
-    // Default: gemini-2.5-flash — cheap, strong vision, serverless-friendly.
-    // Override with VISION_MODEL for e.g. "mimo-v2.5-free" (opencode zen) or
-    // a Gemini Pro model.
-    model: process.env.VISION_MODEL || "gemini-2.5-flash",
-    // "gemini" (Google HTTP API) or "opencode" (opencode.ai/zen OpenAI-compatible)
-    provider: process.env.VISION_PROVIDER || "gemini",
-  };
+  const provider = process.env.VISION_PROVIDER || "gemini";
+  const model = process.env.VISION_MODEL || "gemini-2.5-flash";
+
+  // Each provider uses ITS OWN key — never cross-send keys between
+  // endpoints (Gemini key to opencode zen → 401, and vice versa).
+  const apiKey =
+    provider === "opencode"
+      ? process.env.OPENCODE_GO_API_KEY ?? null
+      : process.env.GEMINI_API_KEY ??
+        process.env.GOOGLE_GENERATIVE_AI_API_KEY ??
+        null;
+
+  return { apiKey, model, provider };
 }
 
 const PROMPT = `You are an accessibility expert reviewing a UI screenshot for WCAG 2.2 issues.
@@ -172,7 +172,7 @@ async function callOpenCodeVision(
       "Content-Type": "application/json",
     },
     body,
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(60_000),
   });
 
   if (!res.ok) {
