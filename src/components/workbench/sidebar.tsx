@@ -29,7 +29,7 @@ export function Sidebar({ auditId }: { auditId: string }) {
     <aside className="w-64 border-r bg-muted/30 h-full flex flex-col shrink-0">
       <div className="p-4 border-b">
         <Link href="/" className="text-lg font-bold tracking-tight">
-          Able
+          ScanA11y
         </Link>
         <p className="text-xs text-muted-foreground mt-1">
           Accessibility Auditor

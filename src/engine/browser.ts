@@ -1,7 +1,7 @@
 import chromium from "@sparticuz/chromium";
 import { type Browser, type Page, chromium as playwrightChromium } from "playwright-core";
 
-const USER_AGENT = "AbleAuditor/0.1 (+https://able.vercel.app)";
+const USER_AGENT = "ScanA11yAuditor/0.1 (+https://scana11y.vercel.app)";
 
 let cachedBrowser: Browser | null = null;
 

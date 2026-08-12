@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Able — Accessibility Auditor",
+  title: "ScanA11y — Accessibility Auditor",
   description: "WCAG 2.2 accessibility auditor. URL auditing, compliance matrix, evidence-first findings.",
 };
 

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Sidebar } from "@/components/workbench/sidebar";
 
 export const metadata: Metadata = {
-  title: "Able — Workbench",
+  title: "ScanA11y — Workbench",
   description: "Accessibility audit workbench",
 };
 

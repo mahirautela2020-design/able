@@ -15,7 +15,7 @@ describe("figma-parse", () => {
     const textNodes = collectTextNodes(nodes);
     const title = textNodes.find((n) => n.name === "Title");
     expect(title).toBeDefined();
-    expect(title!.characters).toBe("Welcome to Able");
+    expect(title!.characters).toBe("Welcome to ScanA11y");
     expect(title!.style?.fontSize).toBe(32);
     expect(title!.style?.fontWeight).toBe(700);
   });

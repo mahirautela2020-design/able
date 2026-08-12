@@ -1,8 +1,8 @@
-# Able — Enterprise Accessibility Auditor
+# ScanA11y — Enterprise Accessibility Auditor
 
 **Make the web work for everyone.**
 
-Able audits websites against the full WCAG 2.2 success criteria (A/AA/AAA) with
+ScanA11y audits websites against the full WCAG 2.2 success criteria (A/AA/AAA) with
 deterministic, evidence-first findings — every issue backed by a rule ID, the exact
 success criterion, a DOM selector, and a screenshot crop. Runs on open-source engines
 (axe-core, Playwright, colorjs.io) — no paid APIs, no LLM-generated findings.

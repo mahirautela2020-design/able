@@ -100,7 +100,7 @@ export async function buildReportHtml(auditId: string): Promise<string> {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Able Audit Report — ${escapeHtml(audit.target_url)}</title>
+  <title>ScanA11y Audit Report — ${escapeHtml(audit.target_url)}</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 960px; margin: 0 auto; padding: 2rem; color: #1a1a1a; }
     h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
@@ -151,7 +151,7 @@ export async function buildReportHtml(auditId: string): Promise<string> {
   </table>
 
   <p class="footer">
-    Audited with Able 0.1 — Chromium headless. Fonts and rendering may differ from real browsers.
+    Audited with ScanA11y 0.1 — Chromium headless. Fonts and rendering may differ from real browsers.
     Evidence is retained for 30 days. This report is for informational purposes and does not
     constitute legal advice.
   </p>
