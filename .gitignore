@@ -44,3 +44,6 @@ next-env.d.ts
 build-logs/
 
 .vercel
+
+# Supabase CLI temp state
+supabase/.temp/
