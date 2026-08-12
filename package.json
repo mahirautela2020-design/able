@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "verify:enterprise": "vitest run __tests__/enterprise __tests__/mcp",
     "verify": "npm run lint && npm run typecheck && npm run test && npm run build",
     "inngest:dev": "inngest dev"
   },
