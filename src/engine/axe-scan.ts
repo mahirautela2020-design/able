@@ -1,4 +1,5 @@
 import { readFileSync } from "fs";
+import path from "path";
 import type { Page } from "playwright-core";
 import { takeScreenshot } from "./browser";
 
@@ -66,7 +67,10 @@ export interface ScanResult {
 }
 
 export async function runAxe(page: Page): Promise<ScanResult> {
-  const axePath = require.resolve("axe-core");
+  // Resolve axe-core from the filesystem directly. Next.js/Turbopack mangles
+  // require.resolve() output inside server bundles (returns the module spec
+  // like "…\axe.js [app-route] (ecmascript)" instead of a real path).
+  const axePath = path.join(process.cwd(), "node_modules", "axe-core", "axe.js");
   const axeSource = readFileSync(axePath, "utf-8");
   await page.addScriptTag({ content: axeSource });
 
