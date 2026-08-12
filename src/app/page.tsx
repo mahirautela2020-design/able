@@ -14,7 +14,9 @@ export default function Home() {
             evidence-first findings.
           </p>
         </div>
-        <AuthStatus />
+        <div className="shrink-0">
+          <AuthStatus />
+        </div>
       </header>
 
       <Card className="mb-8">

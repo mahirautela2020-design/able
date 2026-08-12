@@ -28,7 +28,7 @@ export function AuthStatus() {
     return (
       <Link
         href="/auth"
-        className="inline-flex items-center justify-center h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] border-border bg-background hover:bg-muted hover:text-foreground"
+        className="inline-flex items-center justify-center whitespace-nowrap shrink-0 h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] border-border bg-background hover:bg-muted hover:text-foreground"
       >
         Sign in
       </Link>
