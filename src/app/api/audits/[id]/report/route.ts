@@ -1,6 +1,13 @@
 import { getAudit, getFindingsForAudit, createSignedUrl } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
 
+/** Best-effort client IP from Vercel/Next headers. */
+function getClientIp(request: Request): string | null {
+  const fwd = request.headers.get("x-forwarded-for");
+  if (fwd) return fwd.split(",")[0].trim();
+  return request.headers.get("x-real-ip") ?? null;
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -8,9 +15,21 @@ export async function GET(
   try {
     const { id } = await params;
 
-    // Isolation: reports are private — a valid session is required.
+    // Isolation: reports are private. Signed-in owners may read; anonymous
+    // requesters may read only when their IP matches the audit's creator IP
+    // (the same rule the audits list uses), so a free-tier user can view
+    // their own result without an account.
     const auth = await requireSession(request);
-    if (!auth.ok) return auth.response;
+    if (!auth.ok) {
+      const auditRow = await getAudit(id);
+      const reqIp = getClientIp(request);
+      if (!reqIp || auditRow.created_ip !== reqIp) {
+        return Response.json(
+          { error: "Missing or invalid authorization header" },
+          { status: 401 }
+        );
+      }
+    }
 
     const audit = await getAudit(id);
     const findings = await getFindingsForAudit(id);

@@ -1,12 +1,16 @@
 import { sanitizeUrl, validateHost } from "@/engine/crawl";
-import { insertAudit, getRecentAudits, deleteAudit } from "@/lib/supabase/server";
+import { insertAudit, getRecentAudits, deleteAudit, countAuditsByIp } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
 import { inngest } from "@/inngest/client";
 
+const ANON_DAILY_LIMIT = parseInt(process.env.ANON_DAILY_LIMIT || "5", 10);
+
 export async function POST(request: Request) {
-  // Every audit is owned by the requester (isolation + TTL cleanup).
+  // Free tier: anonymous users may audit (5/day per IP). Sign-in is only
+  // required for Figma connect (its route guards itself) and when the
+  // anonymous daily limit is reached.
   const auth = await requireSession(request);
-  if (!auth.ok) return auth.response;
+  const ip = getClientIp(request);
 
   try {
     const { url } = await request.json();
@@ -35,11 +39,26 @@ export async function POST(request: Request) {
       );
     }
 
+    // Anonymous rate limit: 5 audits/day per IP, then ask to sign up.
+    if (!auth.ok && ip) {
+      const used = await countAuditsByIp(ip);
+      if (used >= ANON_DAILY_LIMIT) {
+        return Response.json(
+          {
+            error: `You've used your ${ANON_DAILY_LIMIT} free audits for today. Create a free account to keep auditing.`,
+            code: "ANON_LIMIT_REACHED",
+            redirectTo: "/auth",
+          },
+          { status: 429 }
+        );
+      }
+    }
+
     const auditId = await insertAudit(url, {
       maxPages: parseInt(process.env.MAX_PAGES || "5", 10),
     }, {
-      userId: auth.userId,
-      ip: getClientIp(request),
+      userId: auth.ok ? auth.userId : null,
+      ip,
     });
 
     await inngest.send({
