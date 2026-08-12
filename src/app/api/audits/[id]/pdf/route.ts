@@ -1,4 +1,5 @@
-import { getAudit, createSignedUrl, supabase } from "@/lib/supabase/server";
+import { getAudit, getFindingsForAudit, createSignedUrl, supabase } from "@/lib/supabase/server";
+import { requireSession } from "@/lib/supabase/session";
 import { buildReportHtml } from "@/lib/report";
 
 export const maxDuration = 60;
@@ -15,11 +16,16 @@ export const runtime = "nodejs";
  *   PDF is a faithful, slide-ready export of the same content.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
+
+    // Isolation: PDF exports are private — a valid session is required.
+    const auth = await requireSession(request);
+    if (!auth.ok) return auth.response;
+
     const audit = await getAudit(id);
 
     // Regenerate the report HTML from the DB (same builder the pipeline uses)
