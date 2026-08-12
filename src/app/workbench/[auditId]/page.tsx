@@ -1,5 +1,6 @@
 import { getAudit, getFindingsForAudit, createSignedUrl } from "@/lib/supabase/server";
 import { Workbench } from "@/components/workbench/workbench";
+import { NvdaPanel } from "@/components/workbench/nvda-panel";
 import { notFound } from "next/navigation";
 
 export const metadata = {
@@ -52,13 +53,16 @@ export default async function WorkbenchPage({
   );
 
   return (
-    <div className="h-[calc(100vh-4rem)]">
-      <Workbench
-        auditId={auditId}
-        targetUrl={audit.target_url}
-        auditStatus={audit.status}
-        findings={signedFindings}
-      />
+    <div className="h-[calc(100vh-4rem)] flex flex-col">
+      <div className="flex-1 min-h-0">
+        <Workbench
+          auditId={auditId}
+          targetUrl={audit.target_url}
+          auditStatus={audit.status}
+          findings={signedFindings}
+        />
+      </div>
+      <NvdaPanel auditId={auditId} />
     </div>
   );
 }

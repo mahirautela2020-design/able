@@ -1,21 +1,57 @@
-# P1 — Explore Workbench: Risks & Mitigations
+# P1 — Explore Workbench v1: Risks & Mitigations
 
-1. **No real scan data (SETUP deferred).** Findings/AX-snapshot tables empty. Mitigation: committed `__fixtures__/audit-p1.json` drives all UI; `scripts/seed-fixture.ts` loads it; tests never hit live DB.
+1. **Cross-origin iframe blocks pickering.** Most real sites block iframing
+   (X-Frame-Options/CSP); even when framed, cross-origin denies DOM access so
+   the element picker can't read AX/computed styles. **Mitigation:** P1 demos
+   Explore against the same-origin `tests/fixtures/explore-demo.html` fixture;
+   for cross-origin targets the picker is disabled with an honest "open in new
+   tab" message. Real remote-session (Playwright+CDP mirror) is a later
+   increment — note in PR, do NOT sink a week into it now.
 
-2. **Supabase keys absent.** BLOCKER-IF-ABSENT for prod reads. Mitigation: `ensureSupabase()` guard; fall back to fixture if `SUPABASE_URL`/`SUPABASE_ANON_KEY` missing or client throws; flag in PR.
+2. **Browser-side axe-core bundle size.** axe-core 4.13 is ~140 KB. Loading
+   it in the explore bundle bloats the workbench. **Mitigation:** dynamic
+   `import("@axe-core/...")` inside the explore path only; never in the
+   results-view path.
 
-3. **AX-snapshot schema drift.** axe-core 4.13 node tree may differ from fixture. Mitigation: pin `axe-core@4.13.x` exact; capture fixture from real `axe.run()` shape; add `isAxNode()` type guard in `lib/axe/types.ts`.
+3. **Colorjs.io CVD matrices accuracy.** Simulation matrices are an
+   approximation; not a medical-grade CVD model. **Mitigation:** label the
+   overlay "simulated — verify with real users"; never make a pass/fail WCAG
+   claim from CVD alone — only flag pairs for human review.
 
-4. **Evidence screenshots slow / expire.** Private Storage URLs expire; large PNG blocks render. Mitigation: `next/image` lazy; placeholder thumbnail for P1 (full variant at scan time = SETUP/P2).
+4. **Focus-ring overlay z-index / iframe events.** Drawing numbered rings over
+   an iframe can be eaten by the iframe's own pointer events or clipped. Keep the overlay pointer-events-none except the picker layer, and draw rings as
+   sibling absolutely-positioned divs sized from the bbox reported by the
+   fixture bridge. **Mitigation:** fixture reports bbox in iframe-local coords;
+   converter maps to overlay coords; test asserts ring count, not pixels.
 
-5. **WCAG URL rot.** Hard-coded links may 303/404. Mitigation: single source `lib/wcag.ts` map id→canonical `/Understanding/<id>` (stable); chip reads from there.
+5. **AX-snapshot route SSRF.** `app/api/explore/ax-snapshot/route.ts` takes a
+   URL → spins Playwright. **Mitigation:** call `lib/ssrf.ts` `validateHost`
+   before launch; reject private/metadata IPs; cap page lifetime;*e2e asserts
+   `http://169.254.169.254` returns 403.*
 
-6. **Two dev servers on port 3000.** Double-start. Mitigation: `npm run verify` pre-check kills stale PID (`taskkill /PID <pid> /F`) before browser tests; never run two `next dev`.
+6. **Playwright in the API route on Vercel.** Vercel Hobby functions may
+   reject Chromium launch (size/timeout). **Mitigation:** gate the snapshot
+   route behind `RUNTIME=nodejs`, set generous `maxDuration`; if launch fails,
+   return 502 with a clear message. Local dev (the demo path) works fully.
 
-7. **Playwright + Next 16 + Turbopack e2e flakiness.** Mitigation: run browser gate against `next start` (prod build), not `dev`; document in `e2e/README.md`.
+7. **Two dev servers on port 3000.** **Mitigation:** `npm run verify`
+   pre-check kills stale PID (`taskkill /PID <pid> /F`); browser tests run
+   against `next start`, never `next dev`.
 
-8. **Builder invents findings.** Temptation to stub fake findings to make UI pass. Mitigation: all findings come ONLY from fixture file; no `findings.insert` in app code; reviewer verifies no LLM-generated WCAG claims.
+8. **Next.js 16 breaking changes.** Route handlers / server actions shape may
+   differ from training. **Mitigation:** read
+   `node_modules/next/dist/docs/` before writing any route; heed AGENTS.md
+   note.
 
-9. **Spec scope creep.** Builder tempted into export/ACR (P5) or modules (P2). Mitigation: TASKS §2 scope only; reviewer rejects out-of-phase code.
+9. **Builder invents findings / WCAG claims.** Temptation to stub fake
+   issues. **Mitigation:** all WCAG pass/fail shown in Explore must come from
+   real axe-core / real contrast math, never hardcoded; reviewer rejects
+   invented WCAG verdicts.
 
-10. **Credential blocker check.** P1 needs NO new creds (Figma=P3, Supabase=SETUP). Flag immediately if any task surfaces a credential requirement — do not improvise.
+10. **Scope creep.** Builder tempted into flow recorder / session import /
+    modules. **Mitigation:** TASKS §2 P1 scope only; reject out-of-phase code.
+
+11. **BLOCKER-IF-ABSENT:** `CHROME_EXECUTABLE_PATH` for e2e. Verify: verifier.sh
+    exports it; document in PR if gate fails. P1 needs NO new credentials
+    (no Figma/Supabase keys — fixture is local). Flag immediately if any task
+    surfaces a credential requirement.
