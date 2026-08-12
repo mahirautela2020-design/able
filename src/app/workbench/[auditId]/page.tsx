@@ -1,4 +1,4 @@
-import { getAudit, getFindingsForAudit } from "@/lib/supabase/server";
+import { getAudit, getFindingsForAudit, createSignedUrl } from "@/lib/supabase/server";
 import { Workbench } from "@/components/workbench/workbench";
 import { notFound } from "next/navigation";
 
@@ -24,25 +24,40 @@ export default async function WorkbenchPage({
 
   if (!audit) notFound();
 
+  // Sign evidence URLs (storage paths need short-lived signed URLs to view)
+  const sign = async (path: string | null): Promise<string | null> => {
+    if (!path) return null;
+    try {
+      return await createSignedUrl(path.replace(/^.*\/evidence\//, ""));
+    } catch {
+      return path;
+    }
+  };
+
+  const signedFindings = await Promise.all(
+    (findings || []).map(async (f) => ({
+      id: f.id,
+      bucket: f.bucket,
+      rule_id: f.rule_id,
+      rule_title: f.rule_title,
+      wcag_criterion: f.wcag_criterion,
+      wcag_level: f.wcag_level,
+      principle: f.principle,
+      severity: f.severity,
+      selector: f.selector,
+      failure_summary: f.failure_summary,
+      screenshot_crop_url: await sign(f.screenshot_crop_url),
+      full_screenshot_url: await sign(f.full_screenshot_url),
+    }))
+  );
+
   return (
     <div className="h-[calc(100vh-4rem)]">
       <Workbench
         auditId={auditId}
         targetUrl={audit.target_url}
         auditStatus={audit.status}
-        findings={(findings || []).map((f) => ({
-          id: f.id,
-          bucket: f.bucket,
-          rule_id: f.rule_id,
-          rule_title: f.rule_title,
-          wcag_criterion: f.wcag_criterion,
-          wcag_level: f.wcag_level,
-          principle: f.principle,
-          severity: f.severity,
-          selector: f.selector,
-          failure_summary: f.failure_summary,
-          screenshot_crop_url: f.screenshot_crop_url,
-        }))}
+        findings={signedFindings}
       />
     </div>
   );

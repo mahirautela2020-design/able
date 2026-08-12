@@ -17,6 +17,7 @@ export interface WorkbenchFinding {
   selector: string | null;
   failure_summary: string;
   screenshot_crop_url: string | null;
+  full_screenshot_url: string | null;
 }
 
 interface WorkbenchProps {
@@ -150,6 +151,13 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
 
   const activeFindings = activeSc ? bySc.get(activeSc) || [] : [];
 
+  // First available full-page screenshot (captured during the audit) —
+  // used as the preview when the site blocks iframing.
+  const firstScreenshot = useMemo(
+    () => liveFindings.find((f) => f.full_screenshot_url)?.full_screenshot_url ?? null,
+    [liveFindings]
+  );
+
   return (
     <div className="flex h-full border rounded-lg overflow-hidden bg-background">
       {/* ── LEFT: WCAG checklist ── */}
@@ -266,19 +274,17 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           </button>
         </div>
 
-        {/* Sandboxed live preview — some sites block iframing (X-Frame-Options),
-            show a graceful fallback instead of a blank panel */}
+        {/* Preview: sandboxed live iframe; when the site blocks embedding
+            (X-Frame-Options/CSP), show the full-page screenshot captured
+            during the audit instead of a dead panel */}
         <div className="flex-1 min-h-0 bg-white flex relative">
           <iframe
             key={previewKey}
             src={targetUrl}
             title={`Live preview of ${targetUrl}`}
             sandbox="allow-scripts allow-forms allow-popups"
-            className="w-full h-full border-0"
+            className={`w-full h-full border-0 ${frameBlocked ? "hidden" : ""}`}
             onLoad={(e) => {
-              // If the browser blocked the frame (X-Frame-Options/CSP), the
-              // load event still fires but content is inaccessible. Detect
-              // via a cross-origin access attempt.
               try {
                 const doc = (e.target as HTMLIFrameElement).contentWindow?.document;
                 if (doc && !doc.body?.childElementCount) setFrameBlocked(true);
@@ -288,23 +294,50 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
             }}
           />
           {frameBlocked && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/95 text-center p-6">
-              <p className="text-sm font-medium">
-                This site doesn&apos;t allow embedding in previews
-              </p>
-              <p className="text-xs text-muted-foreground max-w-sm">
-                {targetUrl} sends X-Frame-Options / CSP headers that block
-                iframe previews. The audit itself is unaffected — open the
-                site directly to explore it.
-              </p>
-              <a
-                href={targetUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90"
-              >
-                Open in new tab
-              </a>
+            <div className="absolute inset-0 flex flex-col bg-background">
+              {firstScreenshot ? (
+                <>
+                  <div className="flex items-center justify-between px-3 py-1.5 border-b bg-muted/20">
+                    <p className="text-xs text-muted-foreground">
+                      {targetUrl} blocks embedding — showing the audited screenshot
+                    </p>
+                    <a
+                      href={targetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
+                    >
+                      Open live site
+                    </a>
+                  </div>
+                  <div className="flex-1 overflow-auto">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={firstScreenshot}
+                      alt={`Full-page screenshot of ${targetUrl} captured during audit`}
+                      className="w-full"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-6">
+                  <p className="text-sm font-medium">
+                    This site doesn&apos;t allow embedding in previews
+                  </p>
+                  <p className="text-xs text-muted-foreground max-w-sm">
+                    {targetUrl} sends X-Frame-Options / CSP headers that block
+                    iframe previews. The audit itself is unaffected.
+                  </p>
+                  <a
+                    href={targetUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+                  >
+                    Open in new tab
+                  </a>
+                </div>
+              )}
             </div>
           )}
         </div>
