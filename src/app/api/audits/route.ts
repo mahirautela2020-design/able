@@ -1,5 +1,5 @@
 import { sanitizeUrl, validateHost } from "@/engine/crawl";
-import { insertAudit, getRecentAudits } from "@/lib/supabase/server";
+import { insertAudit, getRecentAudits, deleteAudit } from "@/lib/supabase/server";
 import { inngest } from "@/inngest/client";
 
 export async function POST(request: Request) {
@@ -57,5 +57,25 @@ export async function GET() {
     // Graceful degradation: DB not configured yet (e.g. local dev before
     // Supabase setup) — the UI must render an empty list, not crash.
     return Response.json([]);
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    if (!id) {
+      return Response.json({ error: "id query parameter is required" }, { status: 400 });
+    }
+
+    const deleted = await deleteAudit(id);
+    if (!deleted) {
+      return Response.json({ error: "Audit not found" }, { status: 404 });
+    }
+
+    return Response.json({ ok: true });
+  } catch (e) {
+    console.error("DELETE /api/audits error:", e);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }
