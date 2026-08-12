@@ -1,17 +1,21 @@
 import { AuditForm } from "@/components/AuditForm";
 import { AuditList } from "@/components/AuditList";
+import { AuthStatus } from "@/components/auth-status";
 import { ConnectFigmaButton } from "@/components/connect-figma-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function Home() {
   return (
     <div className="flex-1 w-full max-w-3xl mx-auto px-4 py-12">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">ScanA11y</h1>
-        <p className="text-muted-foreground mt-2">
-          WCAG 2.2 accessibility auditor. Submit a URL and get a compliance report with
-          evidence-first findings.
-        </p>
+      <header className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">ScanA11y</h1>
+          <p className="text-muted-foreground mt-2">
+            WCAG 2.2 accessibility auditor. Submit a URL and get a compliance report with
+            evidence-first findings.
+          </p>
+        </div>
+        <AuthStatus />
       </header>
 
       <Card className="mb-8">
