@@ -1,5 +1,9 @@
 import { requireSession } from "@/lib/supabase/session";
 import { analyzeScreenshot } from "@/lib/vision";
+import { runDetector } from "@/lib/audit/detection";
+import type { DetectionFinding } from "@/lib/audit/detection-types";
+import { checkTouchTargets } from "@/lib/audit/touch-targets";
+import { checkIconContrast } from "@/lib/audit/icon-contrast";
 
 const MAX_IMAGE_MB = 10;
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -42,8 +46,20 @@ export async function POST(request: Request) {
     // ── 1. Vision advisory (needs_review bucket only) ──
     const vision = await analyzeScreenshot(buffer, file.type);
 
-    // ── 2. Build findings ──
-    const findings = vision.suggestions.map((s) => ({
+    // ── 2. Deterministic UI-element detection (local only) ──
+    // The Python detector measures bounding boxes (2.5.8) and icon contrast
+    // (1.4.11) with math. It is a separate process (AGPL boundary) and
+    // degrades gracefully to LLM-advisory-only when absent (serverless).
+    const detection = await runDetector(buffer);
+    let deterministicFindings: DetectionFinding[] = [];
+    if (!detection.degraded && detection.elements.length > 0) {
+      const touchFindings = checkTouchTargets(detection.elements, 1);
+      const iconFindings = await checkIconContrast(detection.elements, buffer);
+      deterministicFindings = [...touchFindings, ...iconFindings];
+    }
+
+    // ── 3. Build findings (deterministic first, vision stays advisory) ──
+    const visionFindings = vision.suggestions.map((s) => ({
       ruleId: `vision-${s.wcagCriterion.replace(/\./g, "-")}`,
       ruleTitle: `Vision suggestion — WCAG ${s.wcagCriterion}`,
       wcagCriterion: s.wcagCriterion,
@@ -60,6 +76,8 @@ export async function POST(request: Request) {
       evidence: { vision: true, recommendation: s.recommendation },
     }));
 
+    const findings = [...deterministicFindings, ...visionFindings];
+
     return Response.json({
       findings,
       summary: {
@@ -68,8 +86,13 @@ export async function POST(request: Request) {
         imageBytes: file.size,
         visionModel: vision.model,
         visionError: vision.error,
-        suggestedFindings: findings.length,
-        note: "Vision suggestions require human review (needs_review bucket). Color-contrast failures are not measured from screenshots.",
+        suggestedFindings: visionFindings.length,
+        deterministicFindings: deterministicFindings.length,
+        elementsDetected: detection.elements.length,
+        detectionModel: detection.model,
+        detectionDegraded: detection.degraded,
+        detectionReason: detection.reason,
+        note: "Vision suggestions require human review (needs_review bucket). Deterministic findings are measured (element boxes + pixel sampling), not LLM guesses.",
       },
     });
   } catch (e) {
