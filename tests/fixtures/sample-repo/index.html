@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sample App — A11y Bugs</title>
+</head>
+<body>
+  <!-- BUG 1: Image missing alt text -->
+  <img src="logo.png">
+
+  <!-- BUG 2: Low contrast text -->
+  <p style="color: #999; background: #fff;">This text has insufficient contrast</p>
+
+  <!-- Good: Properly labeled -->
+  <button aria-label="Close dialog">X</button>
+
+  <!-- Good: Alt text present -->
+  <img src="hero.jpg" alt="Hero banner image">
+</body>
+</html>
