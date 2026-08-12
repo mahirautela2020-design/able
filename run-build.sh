@@ -23,6 +23,10 @@ PHASES=(
   "p4|ENTERPRISE_SPEC.md|phase/p4-mobile-code|P4: APK static analysis (aapt2 + lint) + Code audit (eslint a11y stack)"
   "p5|ENTERPRISE_SPEC.md|phase/p5-sr-maturity|P5: Screen readers (NVDA out-of-process + guided) + W3C maturity module + ACR/VPAT"
   "p6|ENTERPRISE_SPEC.md|phase/p6-enterprise|P6: Enterprise shell (SSO, RBAC, multi-tenant, API, webhooks, MCP framework)"
+  "p7|P7_NVDA_SPEC.md|phase/p7-nvda|P7: NVDA screen-reader automation (local Windows driver, announcement capture, deterministic silent-element checks)"
+  "p8|P8_VISION_DETECTION_SPEC.md|phase/p8-vision-detection|P8: Deterministic UI element detection (supervision/Python CLI) — measured 2.5.8 + 1.4.11"
+  "p9|P9_APK_DYNAMIC_SPEC.md|phase/p9-apk-dynamic|P9: APK dynamic testing (emulator + adb + uiautomator dump — live 4.1.2/2.5.8/1.4.3)"
+  "p10|P10_IOS_SPEC.md|phase/p10-ios|P10: iOS IPA static analysis (plist/asset checks) + guided VoiceOver checklist"
 )
 
 run_phase() {
