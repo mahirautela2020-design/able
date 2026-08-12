@@ -1,11 +1,17 @@
-import { getAudit, getFindingsForAudit, createSignedUrl } from "@/lib/supabase/server";
+import { getAudit, getFindingsForAudit, createSignedUrl, supabase } from "@/lib/supabase/server";
+import { requireSession } from "@/lib/supabase/session";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
+
+    // Isolation: reports are private — a valid session is required.
+    const auth = await requireSession(request);
+    if (!auth.ok) return auth.response;
+
     const audit = await getAudit(id);
     const findings = await getFindingsForAudit(id);
 

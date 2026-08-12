@@ -75,13 +75,16 @@ type FindingRow = {
 
 export async function insertAudit(
   targetUrl: string,
-  config: Record<string, unknown> = {}
+  config: Record<string, unknown> = {},
+  owner?: { userId: string | null; ip: string | null }
 ): Promise<string> {
   const { data, error } = await supabase
     .from("audits")
     .insert({
       target_url: targetUrl,
       config,
+      created_by: owner?.userId ?? null,
+      created_ip: owner?.ip ?? null,
     })
     .select("id")
     .single();
@@ -172,15 +175,89 @@ export async function getFindingsForAudit(auditId: string) {
   return data;
 }
 
-export async function getRecentAudits(limit = 10) {
-  const { data, error } = await supabase
+export async function getRecentAudits(
+  limit = 10,
+  scope?: { userId: string | null; ip: string | null }
+) {
+  let query = supabase
     .from("audits")
     .select("id, target_url, status, created_at, progress")
     .order("created_at", { ascending: false })
     .limit(limit);
 
+  // Isolation: users only see their own audits (by owner id). Anonymous
+  // rows (created_by null, e.g. pre-isolation or unauthenticated) are
+  // visible only when the requester's IP matches the recorded creator IP.
+  if (scope?.userId) {
+    query = query.or(`created_by.eq.${scope.userId},and(created_by.is.null,created_ip.eq.${scope.ip ?? ""})`);
+  } else if (scope?.ip) {
+    query = query.or(`created_ip.eq.${scope.ip},and(created_by.is.null,created_ip.eq.${scope.ip})`);
+  } else {
+    query = query.eq("created_by", "00000000-0000-0000-0000-000000000000");
+  }
+
+  const { data, error } = await query;
+
   if (error) throw error;
   return data;
+}
+
+/**
+ * TTL cleanup — called by the retention cron (Inngest):
+ *  - audits older than AUDIT_RETENTION_HOURS (default 24) are deleted
+ *    (findings/pages cascade; evidence storage removed per audit)
+ *  - figma_connections not refreshed within FIGMA_TOKEN_TTL_HOURS
+ *    (default 24) are deleted — a user's Figma authorization expires
+ *    automatically, so an authorized token can never live forever.
+ * Returns a summary of what was cleaned.
+ */
+export async function cleanupExpiredData(): Promise<{
+  auditsDeleted: number;
+  connectionsDeleted: number;
+}> {
+  const retentionHours = parseInt(process.env.AUDIT_RETENTION_HOURS || "24", 10);
+  const tokenTtlHours = parseInt(process.env.FIGMA_TOKEN_TTL_HOURS || "24", 10);
+
+  const cutoff = new Date(Date.now() - retentionHours * 3600_000).toISOString();
+  const tokenCutoff = new Date(Date.now() - tokenTtlHours * 3600_000).toISOString();
+
+  // 1. Expired audits
+  const { data: expiredAudits, error: auditError } = await supabase
+    .from("audits")
+    .select("id")
+    .lt("created_at", cutoff);
+
+  if (auditError) throw auditError;
+
+  let auditsDeleted = 0;
+  for (const audit of expiredAudits ?? []) {
+    try {
+      await deleteAudit(audit.id);
+      auditsDeleted++;
+    } catch {
+      // best-effort per audit
+    }
+  }
+
+  // 2. Stale Figma connections (authorization expiry)
+  const { data: staleConnections, error: connError } = await supabase
+    .from("figma_connections")
+    .select("id, user_id")
+    .lt("updated_at", tokenCutoff);
+
+  if (connError) throw connError;
+
+  let connectionsDeleted = 0;
+  for (const conn of staleConnections ?? []) {
+    try {
+      await deleteFigmaConnection(conn.user_id);
+      connectionsDeleted++;
+    } catch {
+      // best-effort per connection
+    }
+  }
+
+  return { auditsDeleted, connectionsDeleted };
 }
 
 /**

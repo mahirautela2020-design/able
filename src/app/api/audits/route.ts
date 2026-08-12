@@ -4,6 +4,10 @@ import { requireSession } from "@/lib/supabase/session";
 import { inngest } from "@/inngest/client";
 
 export async function POST(request: Request) {
+  // Every audit is owned by the requester (isolation + TTL cleanup).
+  const auth = await requireSession(request);
+  if (!auth.ok) return auth.response;
+
   try {
     const { url } = await request.json();
 
@@ -33,6 +37,9 @@ export async function POST(request: Request) {
 
     const auditId = await insertAudit(url, {
       maxPages: parseInt(process.env.MAX_PAGES || "5", 10),
+    }, {
+      userId: auth.userId,
+      ip: getClientIp(request),
     });
 
     await inngest.send({
@@ -50,15 +57,32 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const audits = await getRecentAudits(10);
+    // Owner-scoped listing: signed-in users see only their audits; the
+    // anonymous path falls back to IP matching (see getRecentAudits).
+    const auth = await requireSession(request);
+    let scope: { userId: string | null; ip: string | null } | undefined;
+    if (auth.ok) {
+      scope = { userId: auth.userId, ip: getClientIp(request) };
+    } else {
+      scope = { userId: null, ip: getClientIp(request) };
+    }
+
+    const audits = await getRecentAudits(10, scope);
     return Response.json(Array.isArray(audits) ? audits : []);
   } catch {
     // Graceful degradation: DB not configured yet (e.g. local dev before
     // Supabase setup) — the UI must render an empty list, not crash.
     return Response.json([]);
   }
+}
+
+/** Best-effort client IP from Vercel/Next headers. */
+function getClientIp(request: Request): string | null {
+  const fwd = request.headers.get("x-forwarded-for");
+  if (fwd) return fwd.split(",")[0].trim();
+  return request.headers.get("x-real-ip") ?? null;
 }
 
 export async function DELETE(request: Request) {
