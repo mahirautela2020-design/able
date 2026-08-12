@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Lightbox } from "@/components/ui/lightbox";
 import {
   Accordion,
   AccordionContent,
@@ -98,6 +99,7 @@ export function ReportViewer({ auditId }: { auditId: string }) {
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -209,10 +211,20 @@ export function ReportViewer({ auditId }: { auditId: string }) {
   return (
     <div className="space-y-6">
       {reportUrl && (
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              // PDF is generated server-side (16:9 landscape) — download it
+              window.location.href = `/api/audits/${auditId}/pdf`;
+            }}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Download PDF (16:9)
+          </Button>
           <Button variant="outline" onClick={() => window.open(reportUrl!, "_blank")}>
             <Download className="h-4 w-4 mr-2" />
-            Download Report (HTML)
+            View HTML Report
           </Button>
         </div>
       )}
@@ -376,11 +388,18 @@ export function ReportViewer({ auditId }: { auditId: string }) {
                               )}
                             </div>
                             {f.screenshot_crop_url && (
-                              <img
-                                src={f.screenshot_crop_url}
-                                alt={`Evidence for ${f.rule_id}`}
-                                className="w-24 h-16 object-cover rounded border shrink-0"
-                              />
+                              <button
+                                type="button"
+                                onClick={() => setLightbox(f.screenshot_crop_url!)}
+                                className="shrink-0"
+                                aria-label={`Open evidence screenshot for ${f.rule_id} in full size`}
+                              >
+                                <img
+                                  src={f.screenshot_crop_url}
+                                  alt={`Evidence for ${f.rule_id}`}
+                                  className="w-24 h-16 object-cover rounded border shrink-0 cursor-zoom-in hover:ring-2 hover:ring-ring transition-shadow"
+                                />
+                              </button>
                             )}
                           </div>
                         </CardContent>
@@ -393,6 +412,14 @@ export function ReportViewer({ auditId }: { auditId: string }) {
           }
         )}
       </Tabs>
+      {lightbox && (
+        <Lightbox
+          src={lightbox}
+          alt="Evidence screenshot"
+          caption="Evidence screenshot — click outside or press Esc to close"
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </div>
   );
 }

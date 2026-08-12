@@ -7,6 +7,25 @@ import { computeComplianceMatrix } from "@/engine/normalize";
 export async function buildAndStoreReport(
   auditId: string
 ): Promise<void> {
+  const html = await buildReportHtml(auditId);
+
+  const reportPath = `${auditId}/report-${auditId}.html`;
+  await uploadEvidence(
+    Buffer.from(html, "utf-8"),
+    reportPath,
+    "text/html"
+  );
+
+  const { error } = await supabase
+    .from("audits")
+    .update({ report_path: reportPath })
+    .eq("id", auditId);
+
+  if (error) throw error;
+}
+
+/** Fetch audit + findings and build the full report HTML string. */
+export async function buildReportHtml(auditId: string): Promise<string> {
   const { data: audit } = await supabase
     .from("audits")
     .select("*")
@@ -18,7 +37,7 @@ export async function buildAndStoreReport(
     .select("*")
     .eq("audit_id", auditId);
 
-  if (!audit) return;
+  if (!audit) return "<html><body><h1>Audit not found</h1></body></html>";
 
   const matrix = computeComplianceMatrix(findings || []);
 
@@ -41,8 +60,6 @@ export async function buildAndStoreReport(
     moderate: automated.filter((f) => f.severity === "moderate").length,
     minor: automated.filter((f) => f.severity === "minor").length,
   };
-
-  const reportPath = `${auditId}/report-${auditId}.html`;
 
   const rows: string[] = [];
   for (const sc of matrix.sc) {
@@ -141,18 +158,7 @@ export async function buildAndStoreReport(
 </body>
 </html>`;
 
-  await uploadEvidence(
-    Buffer.from(html, "utf-8"),
-    reportPath,
-    "text/html"
-  );
-
-  const { error } = await supabase
-    .from("audits")
-    .update({ report_path: reportPath })
-    .eq("id", auditId);
-
-  if (error) throw error;
+  return html;
 }
 
 function escapeHtml(str: string): string {
