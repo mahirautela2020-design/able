@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { supabase } from "@/lib/supabase/client";
 import { getMaturityQuestions } from "@/lib/maturity/questions";
 import type { MaturityResult } from "@/lib/maturity/score";
 
@@ -17,9 +18,15 @@ export function Questionnaire() {
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       const res = await fetch("/api/maturity", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ answers }),
       });
       if (res.ok) {

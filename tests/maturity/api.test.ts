@@ -1,12 +1,50 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const authRequest = (init: RequestInit = {}, url = "http://localhost/api/maturity"): Request =>
+  new Request(url, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer test-token",
+      ...(init.headers as Record<string, string>),
+    },
+  });
 
 describe("maturity/api", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock("@/lib/supabase/server", () => ({
+      supabase: {
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: "test-user" } },
+            error: null,
+          }),
+        },
+      },
+    }));
+    vi.doMock("@/lib/supabase/session", async () => {
+      return {
+        requireSession: async (request: Request) => {
+          const header = request.headers.get("authorization");
+          if (!header?.startsWith("Bearer ")) {
+            return {
+              ok: false,
+              response: new Response(
+                JSON.stringify({ error: "Missing or invalid authorization header" }),
+                { status: 401 }
+              ),
+            };
+          }
+          return { ok: true, userId: "test-user" };
+        },
+      };
+    });
+  });
+
   it("validates answers are required", async () => {
     const { POST } = await import("@/app/api/maturity/route");
-    const request = new Request("http://localhost/api/maturity", {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
+    const request = authRequest({ method: "POST", body: JSON.stringify({}) });
     const response = await POST(request);
     expect(response.status).toBe(400);
     const body = await response.json();
@@ -26,9 +64,8 @@ describe("maturity/api", () => {
     for (const id of ids) {
       answers[id] = 3;
     }
-    const request = new Request("http://localhost/api/maturity", {
+    const request = authRequest({
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ answers }),
     });
     const response = await POST(request);
@@ -42,11 +79,19 @@ describe("maturity/api", () => {
 
   it("handles invalid JSON body", async () => {
     const { POST } = await import("@/app/api/maturity/route");
-    const request = new Request("http://localhost/api/maturity", {
-      method: "POST",
-      body: "not-json",
-    });
+    const request = authRequest({ method: "POST", body: "{not-json" });
     const response = await POST(request);
     expect(response.status).toBe(500);
+  });
+
+  it("rejects requests without a session (401)", async () => {
+    const { POST } = await import("@/app/api/maturity/route");
+    const request = new Request("http://localhost/api/maturity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers: { "gov-1": 3 } }),
+    });
+    const response = await POST(request);
+    expect(response.status).toBe(401);
   });
 });

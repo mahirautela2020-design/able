@@ -1,8 +1,14 @@
 import { getFindingsForAudit } from "@/lib/supabase/server";
+import { requireSession } from "@/lib/supabase/session";
 import { buildVPAT, vpatToCsv, vpatToJson } from "@/lib/vpat/builder";
 import type { Finding } from "@/engine/axe-scan";
 
 export async function GET(request: Request) {
+  // Auth guard: VPAT exports contain client findings (URLs, element HTML,
+  // evidence) — must not be readable without a valid session.
+  const auth = await requireSession(request);
+  if (!auth.ok) return auth.response;
+
   try {
     const { searchParams } = new URL(request.url);
     const auditId = searchParams.get("auditId");
