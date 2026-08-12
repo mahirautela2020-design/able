@@ -29,6 +29,8 @@ const statusVariant: Record<string, "default" | "secondary" | "destructive" | "o
 export function AuditList() {
   const [audits, setAudits] = useState<Audit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetch("/api/audits")
@@ -37,6 +39,26 @@ export function AuditList() {
       .catch(() => setAudits([]))
       .finally(() => setLoading(false));
   }, []);
+
+  async function handleDelete(id: string) {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/audits?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setAudits((prev) => prev.filter((a) => a.id !== id));
+      } else {
+        const body = await res.json().catch(() => null);
+        alert(body?.error || "Failed to delete audit");
+      }
+    } catch {
+      alert("Failed to delete audit");
+    } finally {
+      setDeleting(false);
+      setConfirmId(null);
+    }
+  }
 
   if (loading) {
     return <div className="h-32 flex items-center justify-center text-muted-foreground">Loading...</div>;
@@ -57,7 +79,7 @@ export function AuditList() {
           <TableHead>URL</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Date</TableHead>
-          <TableHead className="w-[80px]"></TableHead>
+          <TableHead className="w-[160px] text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -74,14 +96,39 @@ export function AuditList() {
             <TableCell className="text-muted-foreground text-sm">
               {new Date(audit.created_at).toLocaleDateString()}
             </TableCell>
-            <TableCell>
+            <TableCell className="text-right whitespace-nowrap">
               {(audit.status === "complete" || audit.status === "failed") && (
-                <Link
-                  href={`/audits/${audit.id}`}
-                  className="text-primary hover:underline text-sm"
+                <>
+                  <Link
+                    href={`/workbench/${audit.id}`}
+                    className="text-primary hover:underline text-sm mr-3"
+                  >
+                    Workbench
+                  </Link>
+                  <Link
+                    href={`/audits/${audit.id}`}
+                    className="text-primary hover:underline text-sm mr-3"
+                  >
+                    View
+                  </Link>
+                </>
+              )}
+              {confirmId === audit.id ? (
+                <button
+                  onClick={() => handleDelete(audit.id)}
+                  disabled={deleting}
+                  className="text-destructive hover:underline text-sm font-medium disabled:opacity-50"
                 >
-                  View
-                </Link>
+                  {deleting ? "Deleting…" : "Confirm delete"}
+                </button>
+              ) : (
+                <button
+                  onClick={() => setConfirmId(audit.id)}
+                  className="text-muted-foreground hover:text-destructive hover:underline text-sm transition-colors"
+                  aria-label={`Delete audit for ${audit.target_url}`}
+                >
+                  Delete
+                </button>
               )}
             </TableCell>
           </TableRow>

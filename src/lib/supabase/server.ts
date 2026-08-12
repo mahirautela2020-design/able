@@ -183,6 +183,31 @@ export async function getRecentAudits(limit = 10) {
   return data;
 }
 
+/**
+ * Delete an audit and everything tied to it (pages, findings via cascade,
+ * and the evidence storage folder). Returns true if the audit existed.
+ */
+export async function deleteAudit(auditId: string): Promise<boolean> {
+  // 1. Delete evidence from storage first (folder = auditId/)
+  const { error: storageError } = await supabase.storage
+    .from("evidence")
+    .remove([`${auditId}`]);
+
+  if (storageError && !storageError.message?.includes("not found")) {
+    throw storageError;
+  }
+
+  // 2. Delete the audit row — findings + pages cascade (ON DELETE CASCADE)
+  const { data, error } = await supabase
+    .from("audits")
+    .delete()
+    .eq("id", auditId)
+    .select("id");
+
+  if (error) throw error;
+  return (data?.length ?? 0) > 0;
+}
+
 export async function uploadEvidence(
   buffer: Buffer,
   path: string,
