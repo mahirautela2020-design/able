@@ -36,9 +36,14 @@ function validateUrl(url: string): void {
   }
 }
 
-async function fetchFigma(path: string): Promise<Response> {
-  const pat = getFigmaPat();
-  if (!pat) {
+/**
+ * Fetch from the Figma REST API.
+ * @param tokenOverride — per-user OAuth token (from figma_connections).
+ *   Falls back to the global PAT (single-account mode) when absent.
+ */
+async function fetchFigma(path: string, tokenOverride?: string | null): Promise<Response> {
+  const token = tokenOverride ?? getFigmaPat();
+  if (!token) {
     throw new Error("FIGMA_PAT not configured");
   }
 
@@ -47,14 +52,17 @@ async function fetchFigma(path: string): Promise<Response> {
 
   return fetch(url, {
     headers: {
-      "X-Figma-Token": pat,
+      "X-Figma-Token": token,
     },
   });
 }
 
-export async function getFile(fileKey: string): Promise<FigmaFileResponse> {
+export async function getFile(
+  fileKey: string,
+  tokenOverride?: string | null
+): Promise<FigmaFileResponse> {
   validateFileKey(fileKey);
-  const resp = await fetchFigma(`/files/${fileKey}?depth=4`);
+  const resp = await fetchFigma(`/files/${fileKey}?depth=4`, tokenOverride);
   if (!resp.ok) {
     throw new Error(`Figma API error (${resp.status}): ${await resp.text()}`);
   }
@@ -63,10 +71,14 @@ export async function getFile(fileKey: string): Promise<FigmaFileResponse> {
 
 export async function getNode(
   fileKey: string,
-  nodeId: string
+  nodeId: string,
+  tokenOverride?: string | null
 ): Promise<FigmaNodeResponse["nodes"][string] | null> {
   validateFileKey(fileKey);
-  const resp = await fetchFigma(`/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}`);
+  const resp = await fetchFigma(
+    `/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}`,
+    tokenOverride
+  );
   if (!resp.ok) {
     throw new Error(`Figma API error (${resp.status}): ${await resp.text()}`);
   }

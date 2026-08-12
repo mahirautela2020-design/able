@@ -1,5 +1,6 @@
 import { AuditForm } from "@/components/AuditForm";
 import { AuditList } from "@/components/AuditList";
+import { ConnectFigmaButton } from "@/components/connect-figma-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function Home() {
@@ -24,6 +25,19 @@ export default function Home() {
         <CardContent>
           <AuditForm />
         </CardContent>
+      </Card>
+
+      <Card className="mb-8">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Figma Files</span>
+            <ConnectFigmaButton />
+          </CardTitle>
+          <CardDescription>
+            Connect your Figma account to audit design files — contrast, touch targets,
+            and image alt text on real frames.
+          </CardDescription>
+        </CardHeader>
       </Card>
 
       <Card>
