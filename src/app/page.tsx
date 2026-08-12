@@ -1,8 +1,7 @@
 import { AuditInput } from "@/components/audit-input";
 import { AuditList } from "@/components/AuditList";
 import { AuthStatus } from "@/components/auth-status";
-import { ConnectFigmaButton } from "@/components/connect-figma-button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function Home() {
   return (
@@ -21,26 +20,10 @@ export default function Home() {
       <Card className="mb-8">
         <CardHeader>
           <CardTitle>Start an audit</CardTitle>
-          <CardDescription>
-            Choose a source: live URL, Figma design, UI screenshot, or Android APK.
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <AuditInput />
         </CardContent>
-      </Card>
-
-      <Card className="mb-8">
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Figma Account</span>
-            <ConnectFigmaButton />
-          </CardTitle>
-          <CardDescription>
-            Connect your Figma account to audit design files with your own access —
-            contrast, touch targets, and image alt text on real frames.
-          </CardDescription>
-        </CardHeader>
       </Card>
 
       <Card>

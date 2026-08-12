@@ -52,6 +52,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [activePrinciple, setActivePrinciple] = useState<string>("1");
   const [levelFilter, setLevelFilter] = useState<"ALL" | "A" | "AA" | "AAA">("ALL");
   const [previewKey, setPreviewKey] = useState(0); // reload iframe
+  const [frameBlocked, setFrameBlocked] = useState(false);
   const [liveFindings, setLiveFindings] = useState<WorkbenchFinding[]>(findings);
   const [status, setStatus] = useState(auditStatus);
   const [progress, setProgress] = useState<Record<string, unknown> | null>(null);
@@ -265,15 +266,47 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           </button>
         </div>
 
-        {/* Sandboxed live preview */}
-        <div className="flex-1 min-h-0 bg-white">
+        {/* Sandboxed live preview — some sites block iframing (X-Frame-Options),
+            show a graceful fallback instead of a blank panel */}
+        <div className="flex-1 min-h-0 bg-white flex relative">
           <iframe
             key={previewKey}
             src={targetUrl}
             title={`Live preview of ${targetUrl}`}
             sandbox="allow-scripts allow-forms allow-popups"
             className="w-full h-full border-0"
+            onLoad={(e) => {
+              // If the browser blocked the frame (X-Frame-Options/CSP), the
+              // load event still fires but content is inaccessible. Detect
+              // via a cross-origin access attempt.
+              try {
+                const doc = (e.target as HTMLIFrameElement).contentWindow?.document;
+                if (doc && !doc.body?.childElementCount) setFrameBlocked(true);
+              } catch {
+                setFrameBlocked(true);
+              }
+            }}
           />
+          {frameBlocked && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/95 text-center p-6">
+              <p className="text-sm font-medium">
+                This site doesn&apos;t allow embedding in previews
+              </p>
+              <p className="text-xs text-muted-foreground max-w-sm">
+                {targetUrl} sends X-Frame-Options / CSP headers that block
+                iframe previews. The audit itself is unaffected — open the
+                site directly to explore it.
+              </p>
+              <a
+                href={targetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+              >
+                Open in new tab
+              </a>
+            </div>
+          )}
         </div>
 
         {/* Findings drawer for selected SC */}

@@ -4,7 +4,7 @@
  * but explicit gating prevents accidental client leaks.
  */
 export function getFigmaPat(): string | null {
-  return process.env.FIGMA_PAT ?? null;
+  return process.env.FIGMA_PAT ?? process.env.FIGMA_ACCESS_TOKEN ?? null;
 }
 
 export function isFigmaAuditPublic(): boolean {
