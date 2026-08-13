@@ -34,11 +34,12 @@ interface AbleBridge {
 
 interface ExplorePanelProps {
   targetUrl: string;
+  auditId: string;
 }
 
 const FOCUS_FLAGS = { trap: false, missingStyle: false, orderMismatch: false };
 
-export function ExplorePanel({ targetUrl }: ExplorePanelProps) {
+export function ExplorePanel({ targetUrl, auditId }: ExplorePanelProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const [pickerActive, setPickerActive] = useState(true);
@@ -206,7 +207,7 @@ export function ExplorePanel({ targetUrl }: ExplorePanelProps) {
       <div className="flex-1 relative min-w-0 bg-white">
         <iframe
           ref={iframeRef}
-          src={targetUrl}
+          src={`/api/preview-proxy?url=${encodeURIComponent(targetUrl)}`}
           title="Explore preview"
           sandbox="allow-scripts allow-same-origin allow-forms"
           className={`w-full h-full border-0 ${pickerActive && !pickerDisabled ? "pointer-events-none" : ""}`}
@@ -291,7 +292,7 @@ export function ExplorePanel({ targetUrl }: ExplorePanelProps) {
 
         <section className="border-b">
           <SectionTitle title="Live contrast" />
-          <ContrastFix element={picked} onApply={handleApplyFix} />
+          <ContrastFix element={picked} auditId={auditId} onApply={handleApplyFix} />
         </section>
 
         <section className="border-b">
