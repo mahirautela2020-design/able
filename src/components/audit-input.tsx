@@ -77,7 +77,7 @@ export function AuditInput() {
         // session token when present so the audit is owner-scoped.
         const {
           data: { session },
-        } = await supabase.auth.getSession();
+        } = await (supabase?.auth.getSession() ?? Promise.resolve({ data: { session: null } }));
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
         };

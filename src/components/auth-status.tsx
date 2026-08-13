@@ -13,6 +13,7 @@ export function AuthStatus() {
   const [user, setUser] = useState<{ email?: string } | null | undefined>(undefined);
 
   useEffect(() => {
+    if (!supabase) return; // env not configured (preview/dev) — stay logged-out
     supabase.auth.getSession().then(({ data }) => {
       setUser(data.session?.user ?? null);
     });
@@ -43,7 +44,7 @@ export function AuthStatus() {
       <Button
         variant="outline"
         size="sm"
-        onClick={() => supabase.auth.signOut()}
+        onClick={() => supabase?.auth.signOut()}
       >
         Sign out
       </Button>

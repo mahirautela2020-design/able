@@ -20,7 +20,7 @@ export function Questionnaire() {
     try {
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await (supabase?.auth.getSession() ?? Promise.resolve({ data: { session: null } }));
       const res = await fetch("/api/maturity", {
         method: "POST",
         headers: {
