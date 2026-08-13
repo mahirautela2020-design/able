@@ -162,6 +162,28 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
 
   const activeFindings = activeSc ? bySc.get(activeSc) || [] : [];
 
+  // Server-side embedding check: the browser can't reliably detect
+  // X-Frame-Options from a cross-origin iframe (every external site throws
+  // on contentWindow access), so we ask the API for the real headers.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        // Reset per target/preview reload (async context — legal setState).
+        setFrameBlocked(false);
+        const res = await fetch(`/api/preview-check?url=${encodeURIComponent(targetUrl)}`);
+        if (!res.ok) return;
+        const json = await res.json();
+        if (!cancelled && json.blocked) setFrameBlocked(true);
+      } catch {
+        // check failed — leave the iframe up
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [targetUrl, previewKey]);
+
   // First available full-page screenshot (captured during the audit) —
   // used as the preview when the site blocks iframing.
   const firstScreenshot = useMemo(
@@ -402,14 +424,6 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
             title={`Live preview of ${targetUrl}`}
             sandbox="allow-scripts allow-forms allow-popups"
             className={`w-full h-full border-0 ${frameBlocked ? "hidden" : ""}`}
-            onLoad={(e) => {
-              try {
-                const doc = (e.target as HTMLIFrameElement).contentWindow?.document;
-                if (doc && !doc.body?.childElementCount) setFrameBlocked(true);
-              } catch {
-                setFrameBlocked(true);
-              }
-            }}
           />
           {frameBlocked && (
             <div className="absolute inset-0 flex flex-col bg-background">
