@@ -76,7 +76,15 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
       setNow(Date.now());
       setStartedAt((prev) => (prev === 0 ? Date.now() : prev));
       try {
-        const res = await fetch(`/api/audits/${auditId}/report`);
+        // Send the session token when available so logged-in users always
+        // pass the owner check (works on localhost where no x-forwarded-for
+        // exists, and on prod). Anonymous users fall back to IP matching.
+        const {
+          data: { session },
+        } = await (supabase?.auth.getSession() ?? Promise.resolve({ data: { session: null } }));
+        const res = await fetch(`/api/audits/${auditId}/report`, {
+          headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+        });
         if (!res.ok) return;
         const json = await res.json();
         if (stopped) return;
