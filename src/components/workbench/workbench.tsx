@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getWcagRegistry, type WcagSuccessCriterion } from "@/engine/wcag-registry";
@@ -50,6 +52,7 @@ const SEVERITY_DOT: Record<string, string> = {
  *    iframe, with a findings drawer for the selected SC.
  */
 export function Workbench({ auditId, targetUrl, auditStatus, findings }: WorkbenchProps) {
+  const router = useRouter();
   const [activeSc, setActiveSc] = useState<string | null>(null);
   const [activePrinciple, setActivePrinciple] = useState<string>("1");
   const [levelFilter, setLevelFilter] = useState<"ALL" | "A" | "AA" | "AAA">("ALL");
@@ -57,6 +60,9 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [frameBlocked, setFrameBlocked] = useState(false);
   const [showScreenshot, setShowScreenshot] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [editingUrl, setEditingUrl] = useState(false);
+  const [urlDraft, setUrlDraft] = useState(targetUrl);
+  const [rerunning, setRerunning] = useState(false);
   const [now, setNow] = useState(0);
   const [startedAt, setStartedAt] = useState(0);
   const [liveFindings, setLiveFindings] = useState<WorkbenchFinding[]>(findings);
@@ -236,6 +242,29 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
     }
   }
 
+  // Re-run: POST the same (or edited) URL to start a fresh audit, then
+  // navigate to its workbench.
+  async function handleRerun(urlOverride?: string) {
+    const url = (urlOverride || urlDraft || targetUrl).trim();
+    if (!url) return;
+    setRerunning(true);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch("/api/audits", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify({ url }),
+      });
+      if (!res.ok) throw new Error("Failed to start audit");
+      const json = await res.json();
+      const newId = json.id;
+      router.push(`/workbench/${newId}`);
+    } catch (e) {
+      console.error("Rerun failed:", e);
+      setRerunning(false);
+    }
+  }
+
   return (
     <div className="flex h-full border rounded-lg overflow-hidden bg-background">
       {/* ── LEFT: WCAG checklist ── */}
@@ -248,6 +277,75 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
               ? ` · ${progress.pagesDone}/${progress.pagesTotal} pages`
               : ""}
           </p>
+        </div>
+
+        {/* Audit status + progress + ETA (left column) */}
+        <div className="p-3 border-b bg-background/50 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {status === "running" || status === "queued" ? (
+                <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+              ) : status === "complete" ? (
+                <span className="h-2 w-2 rounded-full bg-green-500" />
+              ) : status === "failed" ? (
+                <span className="h-2 w-2 rounded-full bg-red-500" />
+              ) : (
+                <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
+              )}
+              <span className="text-xs font-semibold capitalize">
+                {statusLabel(status)}
+              </span>
+            </div>
+            {status === "failed" && (
+              <button
+                onClick={() => handleRerun()}
+                disabled={rerunning}
+                className="text-[11px] px-2 py-0.5 rounded border hover:bg-accent/50 transition-colors disabled:opacity-50"
+              >
+                {rerunning ? "Starting…" : "Re-run"}
+              </button>
+            )}
+          </div>
+
+          {/* Progress bar */}
+          {status === "running" &&
+            progress &&
+            typeof progress.pagesDone === "number" &&
+            typeof progress.pagesTotal === "number" && (
+              <>
+                <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-500"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        (progress.pagesDone / Math.max(1, progress.pagesTotal)) * 100
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {progress.pagesDone >= 1
+                    ? `Scanning page ${progress.pagesDone} of ${progress.pagesTotal}${
+                        etaSeconds !== null ? ` · ~${etaSeconds}s left` : ""
+                      }`
+                    : "Starting…"}
+                </p>
+              </>
+            )}
+          {status === "queued" && (
+            <p className="text-[11px] text-muted-foreground">Waiting to start…</p>
+          )}
+          {status === "complete" && (
+            <p className="text-[11px] text-green-600 dark:text-green-400">
+              Audit complete — {liveFindings.length} findings across {bySc.size} criteria.
+            </p>
+          )}
+          {status === "failed" && (
+            <p className="text-[11px] text-red-600 dark:text-red-400">
+              Audit failed. Check the pages below or re-run.
+            </p>
+          )}
         </div>
 
         {/* Principle tabs */}
@@ -336,10 +434,65 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
       <main className="flex-1 flex flex-col min-w-0">
         {/* URL row — actions live here ONLY (progress lives in the left column) */}
         <div className="px-3 py-2 border-b bg-muted/20 flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-xs font-mono text-muted-foreground truncate">
-              {targetUrl}
-            </span>
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            {/* Back to start */}
+            <Link
+              href="/"
+              className="shrink-0 text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
+              title="Back to new audit"
+            >
+              ← Back
+            </Link>
+
+            {/* URL: display or editable */}
+            {editingUrl ? (
+              <form
+                className="flex items-center gap-1.5 flex-1 min-w-0"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setEditingUrl(false);
+                  if (urlDraft.trim() !== targetUrl) handleRerun();
+                }}
+              >
+                <input
+                  value={urlDraft}
+                  onChange={(e) => setUrlDraft(e.target.value)}
+                  autoFocus
+                  className="flex-1 min-w-0 text-xs font-mono px-2 py-1 rounded border bg-background focus:outline-none focus:ring-1"
+                  placeholder="https://example.com"
+                  aria-label="Edit audit URL"
+                />
+                <button
+                  type="submit"
+                  className="text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+                >
+                  {rerunning ? "Starting…" : "Audit"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingUrl(false);
+                    setUrlDraft(targetUrl);
+                  }}
+                  className="text-xs px-2 py-1 rounded border hover:bg-accent/50"
+                >
+                  Cancel
+                </button>
+              </form>
+            ) : (
+              <button
+                onClick={() => setEditingUrl(true)}
+                className="group flex items-center gap-1.5 min-w-0 max-w-full"
+                title="Click to change URL / re-audit"
+              >
+                <span className="text-xs font-mono text-muted-foreground truncate">
+                  {targetUrl}
+                </span>
+                <span className="text-[10px] text-muted-foreground/60 group-hover:text-primary shrink-0">
+                  ✎
+                </span>
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -357,37 +510,25 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
             >
               Reload preview
             </button>
+            {/* Re-run always available (esp. after a failure) */}
+            <button
+              onClick={() => handleRerun()}
+              disabled={rerunning || status === "running" || status === "queued"}
+              className="text-xs px-2.5 py-1 rounded-md border hover:bg-accent/50 transition-colors disabled:opacity-50"
+            >
+              {rerunning ? "Starting…" : "Re-run"}
+            </button>
             {status === "complete" && (
-              <>
-                <button
-                  onClick={() => (window.location.href = "/")}
-                  className="text-xs px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
-                >
-                  New audit
-                </button>
-                <button
-                  onClick={handleDownloadPdf}
-                  disabled={downloadingPdf}
-                  className="text-xs px-2.5 py-1 rounded-md border hover:bg-accent/50 transition-colors disabled:opacity-50"
-                >
-                  {downloadingPdf ? "Preparing…" : "Download PDF"}
-                </button>
-              </>
+              <button
+                onClick={handleDownloadPdf}
+                disabled={downloadingPdf}
+                className="text-xs px-2.5 py-1 rounded-md border hover:bg-accent/50 transition-colors disabled:opacity-50"
+              >
+                {downloadingPdf ? "Preparing…" : "Download PDF"}
+              </button>
             )}
           </div>
         </div>
-
-        {/* Progress bar while running */}
-        {status === "running" && progress && typeof progress.pagesDone === "number" && typeof progress.pagesTotal === "number" && (
-          <div className="h-1 bg-muted">
-            <div
-              className="h-full bg-primary transition-all duration-500"
-              style={{
-                width: `${Math.min(100, (progress.pagesDone / Math.max(1, progress.pagesTotal)) * 100)}%`,
-              }}
-            />
-          </div>
-        )}
 
         {/* Preview-blocked prompt: audit continues without preview */}
         {frameBlocked && (
