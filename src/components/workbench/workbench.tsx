@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getWcagRegistry, type WcagSuccessCriterion } from "@/engine/wcag-registry";
-import { supabase } from "@/lib/supabase/client";
+import { supabase, authHeaders } from "@/lib/supabase/client";
 
 export interface WorkbenchFinding {
   id: string;
@@ -79,12 +79,8 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
         // Send the session token when available so logged-in users always
         // pass the owner check (works on localhost where no x-forwarded-for
         // exists, and on prod). Anonymous users fall back to IP matching.
-        const {
-          data: { session },
-        } = await (supabase?.auth.getSession() ?? Promise.resolve({ data: { session: null } }));
-        const res = await fetch(`/api/audits/${auditId}/report`, {
-          headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
-        });
+        const headers = await authHeaders();
+        const res = await fetch(`/api/audits/${auditId}/report`, { headers });
         if (!res.ok) return;
         const json = await res.json();
         if (stopped) return;

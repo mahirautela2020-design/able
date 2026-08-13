@@ -20,3 +20,17 @@ export const supabase = configured ? createClient(supabaseUrl, supabaseAnonKey) 
 export function supabaseClient() {
   return supabase;
 }
+
+/**
+ * Headers for authenticated API calls: attaches the session Bearer token
+ * when a session exists, else empty. Callers pass this to fetch so
+ * owner-scoped routes accept the request (works even on localhost where
+ * no x-forwarded-for exists for the anonymous IP fallback).
+ */
+export async function authHeaders(): Promise<Record<string, string>> {
+  if (!supabase) return {};
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return session ? { Authorization: `Bearer ${session.access_token}` } : {};
+}

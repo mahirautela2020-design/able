@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { authHeaders } from "@/lib/supabase/client";
 import { Lightbox } from "@/components/ui/lightbox";
 import {
   Accordion,
@@ -104,7 +105,8 @@ export function ReportViewer({ auditId }: { auditId: string }) {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch(`/api/audits/${auditId}/report`);
+        const headers = await authHeaders();
+        const res = await fetch(`/api/audits/${auditId}/report`, { headers });
         if (!res.ok) throw new Error("Report not found");
         const json = await res.json();
         setData(json);
@@ -121,20 +123,21 @@ export function ReportViewer({ auditId }: { auditId: string }) {
     if (data?.audit.status === "queued" || data?.audit.status === "running") {
       const interval = setInterval(
         () =>
-          fetch(`/api/audits/${auditId}/report`)
+          authHeaders()
+            .then((headers) => fetch(`/api/audits/${auditId}/report`, { headers }))
             .then((r) => r.json())
             .then((json) => {
               setData(json);
               if (json.audit.status === "complete" || json.audit.status === "failed") {
                 clearInterval(interval);
               }
-            }),
-        3000
+            })
+            .catch(() => {}),
+        4000
       );
       return () => clearInterval(interval);
     }
   }, [data?.audit.status, auditId]);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
