@@ -307,53 +307,12 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
 
       {/* ── RIGHT: live preview + findings ── */}
       <main className="flex-1 flex flex-col min-w-0">
-        {/* Audit status bar */}
+        {/* URL row — actions live here ONLY (progress lives in the left column) */}
         <div className="px-3 py-2 border-b bg-muted/20 flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3 min-w-0">
-            {status === "running" || status === "queued" ? (
-              <>
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary" />
-                </span>
-                <span className="text-sm font-medium">
-                  Audit in progress…
-                </span>
-                {progress && (
-                  <span className="text-xs text-muted-foreground font-mono">
-                    {typeof progress.pagesDone === "number" && typeof progress.pagesTotal === "number"
-                      ? `${progress.pagesDone}/${progress.pagesTotal} pages`
-                      : "starting…"}
-                    {etaSeconds !== null && ` · ~${etaSeconds}s left`}
-                  </span>
-                )}
-              </>
-            ) : status === "complete" ? (
-              <>
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-                </span>
-                <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                  Audit complete
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {liveFindings.length} findings · {bySc.size} criteria affected
-                </span>
-              </>
-            ) : status === "failed" ? (
-              <>
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
-                </span>
-                <span className="text-sm font-medium text-red-600 dark:text-red-400">
-                  Audit failed
-                </span>
-              </>
-            ) : (
-              <>
-                <Badge variant="outline">{status}</Badge>
-              </>
-            )}
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xs font-mono text-muted-foreground truncate">
+              {targetUrl}
+            </span>
           </div>
 
           <div className="flex items-center gap-2">
