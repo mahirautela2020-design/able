@@ -61,7 +61,9 @@ case "$cmd" in
     ;;
   install)
     [ $# -lt 2 ] && { echo "usage: install <apk>" >&2; exit 1; }
-    adb install -r "$2" || exit 1
+    # -t allows test-only/debug APKs (INSTALL_FAILED_TEST_ONLY); harmless
+    # for release APKs. -r reinstall keeping data.
+    adb install -r -t "$2" || exit 1
     ;;
   launch)
     [ $# -lt 2 ] && { echo "usage: launch <pkg>" >&2; exit 1; }
