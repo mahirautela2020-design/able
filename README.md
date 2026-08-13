@@ -13,7 +13,7 @@ per-criterion compliance matrix, W3C maturity scoring, and 16:9 PDF reports.
 | **URL** | Live website — axe-core + keyboard walkthrough + evidence crops |
 | **Figma** | Design files — contrast, touch targets, image alt (OAuth2, per-user) |
 | **UI screenshot** | Upload an image — vision-model advisory suggestions |
-| **APK** | Android package — aapt2 manifest analysis |
+| **APK** | Android package — aapt2 manifest + dynamic emulator testing |
 
 ## Why it's "best value"
 
@@ -44,6 +44,19 @@ npm run dev                         # app (terminal 2) → localhost:3000
 
 Verify: `npm run verify` (lint + typecheck + tests + build).
 
+## APK dynamic testing (emulator)
+
+Beyond static `aapt2` manifest analysis, APK uploads can boot a local Android
+emulator and run **dynamic** checks on the live UI hierarchy
+(`scripts/emulator-ctl.sh` → `adb uiautomator dump` + screenshot): 4.1.2 name/
+role/value, 2.5.8 touch-target size, and 1.4.3 contrast (all deterministic, no
+LLM in the path).
+
+- Requires the Android SDK (`adb` + `emulator` on PATH) and a pre-created AVD.
+- Enable with `AVD_NAME=<name>` (or force with `APK_DYNAMIC=1`).
+- Integration tests run only when `ANDROID_EMULATOR=1`.
+- Without the emulator, APK mode **degrades gracefully** to static-only results.
+
 ## Free tier & auth
 
 - Anonymous users get **5 audits/day per IP** — no account needed.
@@ -61,8 +74,8 @@ supabase db push
 
 ## Roadmap (honest gaps)
 
-iOS .ipa automation (needs macOS/Xcode), APK dynamic testing (TalkBack),
-screen-reader automation (manual/guided today — industry-wide limitation),
+iOS .ipa automation (needs macOS/Xcode), TalkBack automation
+(manual/guided today — industry-wide limitation),
 deterministic UI-element detection (OmniParser/supervision).
 
 ## License

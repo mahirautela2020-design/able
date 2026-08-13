@@ -1,56 +1,65 @@
-# P3 TASKS — Figma + Image Auditing
+# P3-TASKS — Figma + Image Accessibility
 
-Phase P3 adds two new audit modules to the Able workbench: (A) Figma file inspection
-via the Figma REST API and (B) image contrast/alt analysis. Spec: ENTERPRISE_SPEC §10,
-PRODUCT_BLUEPRINT §2. Branch: `phase/p3-figma-image`. Verify gates: contrast-pairs tests;
-Figma client parse fixture.
+> Builder: phase `phase/p3-figma-image` already merged to main and lib scaffolds exist
+> (`src/lib/figma/{client,parse}.ts`, `src/lib/audit/{image-alt,image-contrast}.ts`,
+> `src/lib/ssrf.ts`, `src/lib/env.server.ts`). Spec: ENTERPRISE_SPEC §10, PRODUCT_BLUEPRINT
+> §2. Verify gates (ORCHESTRATOR §4): **contrast-pairs tests** + **Figma client parse fixture**.
 
-## A. Figma audit module
+## A. Figma audit module (verify + complete)
 
-1. Create `lib/figma/client.ts` — Figma REST client wrapping `https://api.figma.com/v1`
-   with `FIGMA_PAT` from `env.server.ts`. Functions: `getFile(fileKey)`,
-   `getNode(fileKey, nodeId)`, `getImages(fileKey, ids)`, `getFileNodes(fileKey)`. Add
-   SSRF guard (no arbitrary URL — host must be `api.figma.com`, HTTPS only) per
-   ENTERPRISE_SPEC §2. Validate `fileKey` (regex `^[A-Za-z0-9]+$`).
-2. Add `FIGMA_PAT` to `env.server.ts` read from `process.env.FIGMA_PAT` (optional —
-   absent = feature disabled, surface in UI as "Figma disabled: add PAT"). Never log it.
-3. Create `lib/figma/parse.ts` — transforms Figma file JSON → normalized node tree:
-   `{ id, name, type, fills, strokes, characters, style, children }`. Pure function,
-   no I/O — so it is unit-testable from a recorded fixture.
-4. Create `lib/figma/__fixtures__/sample-file.json` — real recorded Figma file response
-   (redact any personal keys). Used by parse tests + client mock.
-5. Create `lib/figma/parse.test.ts` — assert parse extracts text nodes with style,
-   fills array, nested frame children, handles missing fields. ≥5 assertions.
-6. Create `lib/figma/client.test.ts` — mock `fetch`, assert URL/headers/SSRF guard
-   rejects non-figma host, rejects http, missing PAT returns null gracefully.
-7. Create `app/api/audit/figma/route.ts` — POST `{ fileKey, nodeId? }` → returns
-   parsed node tree. Auth required (reuse P6 auth when absent, gate behind env flag for
-   now). Rate-limited via existing Inngest queue if response > 50 nodes.
-8. Wire "Figma" tab into workbench (WORKBENCH_VISION §3): URL input + node tree table
-   + "Run Figma audit" button calling the API route. Layout in `components/workbench/`.
+1. **Figma client** — confirm `src/lib/figma/client.ts` exposes `getFile(fileKey)`,
+   `getNode(fileKey, nodeId)`, `getImages(fileKey, ids)`, `getFileNodes(fileKey)`.
+   Host must be hard-pinned `api.figma.com` HTTPS; reject any other host. `FIGMA_PAT`
+   sourced from `env.server.ts`; missing → returns null gracefully (feature off), not a
+   crash. Maps to ENTERPRISE_SPEC §2 (SSRF guard) + §10 (Figma ingest).
+   - Test: `tests/figma-client.test.ts` — mocks `fetch`; assert URL/headers; SSRF reject
+     non-figma host; reject http; missing PAT returns null.
 
-## B. Image audit module
+2. **Figma parser** — confirm `src/lib/figma/parse.ts` is a pure recursive fn:
+   Figma JSON → `{ id, name, type, fills, strokes, characters, style, children }`.
+   Stack-safe to depth 4; handles missing fields without throwing.
+   - Test: `tests/figma-parse.test.ts` — fixture `src/lib/figma/__fixtures__/sample-file.json`
+     → ≥5 assertions (text nodes carry style, frame hierarchy, missing-field tolerance).
+   - THE Figma-client-parse verify gate.
 
-9. Create `lib/audit/image-contrast.ts` — WCAG contrast calc (reuse `lib/audit/contrast`
-   from P3-blueprint). Functions: `extractColorPairs(nodeTree)` walking fills/strokes,
-   `checkContrastPairs(pairs)` → finding[] with WCAG level, ratio, evidence rect.
-   Must use pinned axe-core; LLM never creates findings.
-10. Create `lib/audit/__fixtures__/contrast-cases.json` — pairs covering: normal AA pass,
-    AA fail, AAA pass, large-text pass, white-on-white fail, gradient (skip + warn),
-    png image fill (skip — cannot measure).
-11. Create `lib/audit/image-contrast.test.ts` — assert each fixture case resolves
-    correctly, ratios match expected (±0.01), large-text threshold respected.
-12. Create `lib/audit/image-alt.ts` — checks Figma text nodes adjacent to image fills
-    as candidate alt text; flags missing-alt findings for image-only frames.
-    Settle-before-scan: produces findings from deterministic rules only.
-13. Extend `app/api/audit/figma/route.ts` to optionally run image-contrast + image-alt
-    on the parsed tree, return unified findings list.
+3. **`FIGMA_PAT` env** — confirm `env.server.ts` reads `process.env.FIGMA_PAT` (optional).
+   Never logged, never client-side. UI surfaces "Figma disabled: add PAT" when absent.
+
+4. **Figma route** — `src/app/api/audit/figma/route.ts` POST `{ fileKey, nodeId? }` → parsed
+   node tree. Default 401 unless `process.env.FIGMA_AUDIT_PUBLIC === 'true'` (P6 swaps to
+   RBAC). Rate-limit via Inngest queue if response > 50 nodes. (Test 401 when flag unset.)
+
+5. **Figma workbench tab** — `src/components/workbench/figma-image-tab.tsx` shadcn Tabs:
+   URL input + node-tree table + "Run Figma audit" button → calls API route (WORKBENCH_VISION §3).
+   - Browser spec: `tests/browser/figma-image-tab.spec.ts` — tab renders, form submits,
+     results populate from mocked API.
+
+## B. Image audit module (verify + complete)
+
+6. **Image contrast** — `src/lib/audit/image-contrast.ts` — `extractColorPairs(nodeTree)`
+   + `checkContrastPairs(pairs)` → finding[] with WCAG level, ratio, evidence `{rect, nodeId, source: 'rule-contrast'}`.
+   Pinned local; LLM never creates findings. Skip + INFO on gradient/png-image fills.
+   - Test: `tests/image-contrast.test.ts` — fixture `src/lib/audit/__fixtures__/contrast-cases.json`
+     covers: AA pass/fail, AAA pass, large-text pass, white-on-white, gradient-skip, png-skip.
+     Ratios ±0.01.
+   - **THE contrast-pairs verify gate.** Also: `tests/contrast-pairs.test.ts` must stay green.
+
+7. **Image alt** — `src/lib/audit/image-alt.ts` — flags missing-alt for image-only frames;
+   uses adjacent Figma text nodes as candidate alt settlers. Deterministic rules only.
+   - Test: `tests/image-alt.test.ts` — 4+ cases (good, missing, filename-stub, decorative).
+
+8. **Unified findings endpoint** — extend route from task 4 to optionally run image-contrast
+   + image-alt on the parsed tree → unified findings list with `source` tags.
 
 ## C. Integration & verify gates
 
-14. Add `npm run verify` coverage: p3 tests included in the run (`vitest run`).
-15. Contrast-pairs gate: `lib/audit/image-contrast.test.ts` passes all 6 fixtures.
-16. Figma parse gate: `lib/figma/parse.test.ts` + `client.test.ts` green.
-17. Evidence-first: every finding carries `{ rect, nodeId, source: 'axe-core'|'rule-contrast' }`.
-18. No new deps unless MIT; any image lib (sharp) pinned and added to package.json.
-19. Update `build-logs/run.log` is NOT a task — orchestrator handles it.
+9. `npm run verify` includes p3 unit tests (`vitest run`). Gates: contrast-pairs green +
+   figma parse fixture green + browser spec green.
+10. Evidence-first: every finding carries `{ rect, nodeId, source }` (ENTERPRISE_SPEC §2).
+11. No new non-MIT deps. sharp (if added) pinned prebuilt binary; lazy-load only inside route.
+
+## D. Blockers (escalate, do not code past)
+
+12. If `FIGMA_PAT` absent at runtime — surface UI affordance only; tests must stay green
+    WITHOUT the token (mock HTTP).
+13. If Figma API JSON schema mismatches fixture — FIX FIXTURE FIRST, never bend the parser.

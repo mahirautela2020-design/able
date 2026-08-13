@@ -1,19 +1,74 @@
-# P3 RISKS — Figma + Image Auditing
+# P3-RISKS — Figma + Image phase
 
-| # | Risk | Mitigation |
-|---|---|---|
-| 1 | **BLOCKER-IF-ABSENT:** Figma PAT not in `.env`. Without it the Figma audit route cannot hit the live API. | Treat Figma as optional-feature: route returns "Figma disabled: add FIGMA_PAT" when env missing; parse + client unit tests use recorded fixtures so verify gate passes WITHOUT a live PAT. Orchestrator stops only if builder insists on live calls. |
-| 2 | Real Figma file JSON is large (MBs) and nested ~10 levels; parsing resp could blow parse fn complexity. | parse.ts must be recursive + stack-safe; fixture is a trimmed redacted slice; client caps `depth` query param at 4. |
-| 3 | Figma rate limits (7500 req/day/token, 100/min). A user pasting a huge fileKey could DoS. | Rate-limit route via Inngest queue (reuse settle-before-scan funnel); cache.getFile(nodeId) keyed by fileKey+nodeId hash in Supabase `figma_cache` table (added in SETUP/P6 migration — stub for now). |
-| 4 | Image fills with gradients or remote png URLs cannot be contrast-measured reliably. WCAG only covers solid pairs. | Skip + emit INFO finding `{ kind: 'contrast', note: 'gradient/image fill skipped' }`. Do NOT fabricate ratios. |
-| 5 | Figma "characters" node may lack style block (rame unstyled); divide by zero in ratio calc. | Guard: missing style → treat as 16px regular; surface INFO "inferred size". Never throw on partial data. |
-| 6 | axe-core is a DOM auditor — it cannot directly inspect Figma JSON. Misusing it would weaken the evidence-first guardrail. | Image-contrast is a NEW deterministic rule module (`lib/audit/image-contrast.ts`), NOT axe-core. Findings carry `source: 'rule-contrast'`. axe-core stays pinned and only runs on rendered HTML (P1 paths unchanged). |
-| 7 | SSRF risk: if node URL or image URL is user-controlled, attacker could pivot `api/audit/figma` to hit internal hosts. | Hard-pin `api.figma.com`/HTTPS in client.ts; image URLs fetched server-side only via a allowlist (`figma-alpha-api.s3`, `figma.com`). Reject everything else with 400. Covered in `client.test.ts`. |
-| 8 | Personal keys in fixtures: sample-file.json might leak a user's Figma content/PAT. | Redact any `lastModifiedBy`, email, ownerId fields before committing; keep fixture in `__fixtures__/`; never commit `.env`. |
-| 9 | sharp is ~25MB native binary; Vercel Hobby function size limit. | Pin sharp to a prebuilt binary variant (`sharp@^0.33`); only load lazily inside route, not at module top. If install fails on Windows, skip image-raster path and only support vector fills. |
-| 10 | Large-text threshold (3:1) misapplied to Figma frames which don't carry a "text size" concept clearly (style may be inherited). | Walk style chain explicitly; if no font size in node or ancestors, default to "normal" (4.5:1 threshold). Emit INFO with rationale. |
-| 11 | P6 auth may not exist yet; route left wide-open leaks PAT-protected Figma data to anonymous callers. | Gate route behind `process.env.FIGMA_AUDIT_PUBLIC !== 'true'` → default 401; when P6 lands, swap to RBAC. Add a test asserting 401 when flag unset. |
-| 12 | Spec contradiction: BLUEPRINT §2 lists "image contrast"; ENTERPRISE_SPEC §10 describes Figma integration separately. Could double-build. | Treat as ONE module per spec (Figma + image rules together); route path `/api/audit/figma`. Note in PR description. |
+> Builder: handle each. Orchestrator: stop+report on BLOCKER items.
 
-Hard stop conditions: if Figma API schema mismatches fixture (parse fn can't handle keys),
-fix fixture first, NOT parse — spec is the source of truth.
+## BLOCKER-IF-ABSENT
+
+1. **Figma PAT (`FIGMA_PAT`)** — required for live `getFile` calls. Agent CANNOT create a
+   Figma account. **Mitigation**: treat Figma as optional — route returns "Figma disabled:
+   add FIGMA_PAT" when env missing; parse + client unit tests use recorded fixtures
+   (`src/lib/figma/__fixtures__/sample-file.json`) so verify gate passes WITHOUT a live
+   PAT. Frontend shows "Add Figma PAT in settings" affordance. Orchestrator flags this as
+   blocker #2 (credential the agent can't create) — do NOT attempt to obtain one.
+
+2. **Supabase Storage bucket `evidence-images`** (if image screenshots are persisted) —
+   must exist with private visibility. **Mitigation**: migration creates the bucket;
+   tests mock the storage client so CI is green without the real bucket.
+
+## Technical risks
+
+3. **Figma API JSON size/nesting depth** — files can be MB-scale, ~10 levels deep; recursive
+   parse can blow stack/timeout. **Mitigation**: parse.ts recursive + stack-safe; cap depth
+   at 4; fixture is a trimmed redacted slice. Inngest chunk parse into ≤50-node `step.run`s.
+
+4. **Figma rate limits** (7500/day/token, 100/min) — huge fileKey could DoS.
+   **Mitigation**: rate-limit the route via existing Inngest queue (settle-before-scan funnel);
+   cache `getFile(nodeId)` keyed by `fileKey+nodeId` hash in `figma_cache` table (stub until SETUP).
+
+5. **Figma color format** — RGB floats 0–1 with separate opacity. Naive `Math.round(r*255)`
+   gives off-by-one at edges. **Mitigation**: `Math.round(Math.min(1,Math.max(0,r))*255)`;
+   fixture includes 0.9999 and 0.0001 cases.
+
+6. **Transparent / gradient / png-image fills** — WCAG contrast undefined on these.
+   **Mitigation**: skip + emit INFO `{ kind: 'contrast', note: 'gradient|image fill skipped' }`.
+   Do NOT fabricate ratios (evidence-first, ENTERPRISE_SPEC §2). Test asserts SKIP not fail.
+
+7. **Missing text style** — Figma "characters" node may lack `style` block → divide-by-zero
+   in ratio calc. **Mitigation**: guard — missing style → treat as 16px regular; emit INFO
+   "inferred size". Never throw on partial data.
+
+8. **axe-core scope creep** — axe-core is a DOM auditor; cannot directly inspect Figma JSON.
+   **Mitigation**: image-contrast is a NEW deterministic rule module
+   (`src/lib/audit/image-contrast.ts`, `source: 'rule-contrast'`), NOT axe-core. axe-core
+   stays pinned + only runs on rendered HTML (P1 paths unchanged).
+
+9. **SSRF via node URL / image src** — user-controlled URLs could pivot the route to internal hosts. **Mitigation**: hard-pin `api.figma.com`/HTTPS in client.ts; image fetches go through
+   allowlist (`figma-alpha-api.s3`, `figma.com`). Reject everything else with 400.
+   Covered in `tests/figma-client.test.ts` (expect `http://127.0.0.1` rejected).
+
+10. **Personal keys in fixtures** — `sample-file.json` might leak `lastModifiedBy`, email,
+    ownerId. **Mitigation**: redact those fields; keep fixture in `__fixtures__/`; never
+    commit `.env*`.
+
+11. **sharp binary on Vercel Hobby** — ~25MB native lib can blow function size limit.
+    **Mitigation**: pin `sharp@^0.33` (prebuilt); lazy-load inside route, not at module top.
+    If install fails on Windows, skip raster path and support vector fills only.
+
+12. **Large-text threshold (3:1)** — Figma frames don't carry a clear "text size" concept
+    (style may be inherited). **Mitigation**: walk style chain explicitly; no font size in
+    node or ancestors → default to "normal" (4.5:1 threshold). Emit INFO with rationale.
+
+13. **P6 auth not yet present** — leaving the Figma route wide-open leaks PAT-protected data.
+    **Mitigation**: gate route behind `FIGMA_AUDIT_PUBLIC !== 'true'` → default 401; P6
+    swaps to RBAC. Test asserts 401 when flag unset.
+
+## Spec ambiguity
+
+14. **BLUEPRINT §2 "image contrast" vs ENTERPRISE_SPEC §10 "Figma integration"** — could
+    double-build. **Mitigation**: treat as ONE module (Figma + image rules together), route
+    path `/api/audit/figma`. Note interpretation in PR description. (Safer: unified module.)
+
+## Hard stop
+
+15. Figma API schema mismatches fixture → FIX FIXTURE FIRST, not the parser. Spec/source
+    of truth is Figma's live response, recorded once and redacted.
