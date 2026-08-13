@@ -3,19 +3,20 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Globe, ImageIcon, Smartphone, PenTool } from "lucide-react";
+import { Loader2, Globe, ImageIcon, Smartphone, PenTool, Apple } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { ConnectFigmaButton } from "@/components/connect-figma-button";
 import { supabase } from "@/lib/supabase/client";
 
-type Mode = "url" | "figma" | "image" | "apk";
+type Mode = "url" | "figma" | "image" | "apk" | "ios";
 
 const MODES: { key: Mode; label: string; icon: typeof Globe; hint: string }[] = [
   { key: "url", label: "URL", icon: Globe, hint: "Public website URL" },
   { key: "figma", label: "Figma", icon: PenTool, hint: "Figma file key or share link" },
   { key: "image", label: "UI Screenshot", icon: ImageIcon, hint: "PNG / JPEG / WebP" },
   { key: "apk", label: "APK", icon: Smartphone, hint: "Android app package" },
+  { key: "ios", label: "iOS", icon: Apple, hint: "iOS .ipa app bundle" },
 ];
 
 /**
@@ -32,6 +33,22 @@ export function AuditInput() {
   const [result, setResult] = useState<{
     findings?: unknown[];
     summary?: Record<string, unknown>;
+    bundle?: {
+      bundleId?: string | null;
+      displayName?: string | null;
+      version?: string | null;
+      build?: string | null;
+      minimumOsVersion?: string | null;
+      launchStoryboard?: string | null;
+      localizations?: string[];
+      accessibilityKeys?: string[];
+      iconNames2x?: string[];
+      iconNames3x?: string[];
+      hasAssetsCar?: boolean;
+      plistReadable?: boolean;
+    };
+    guidedChecklist?: Array<{ id: string; instruction: string; wcagSc: string; requiresMacOs: boolean }>;
+    notes?: string[];
     dynamic?: {
       ran: boolean;
       screens: Array<{
@@ -111,10 +128,14 @@ export function AuditInput() {
       if (!file) return toast.error("Choose a file first");
       const form = new FormData();
       form.append("file", file);
-      if (mode === "apk") form.append("auditId", crypto.randomUUID());
+      if (mode === "apk" || mode === "ios") form.append("auditId", crypto.randomUUID());
 
       const res = await fetch(
-        mode === "apk" ? "/api/uploads/apk" : "/api/uploads/image",
+        mode === "apk"
+          ? "/api/uploads/apk"
+          : mode === "ios"
+            ? "/api/uploads/ipa"
+            : "/api/uploads/image",
         { method: "POST", body: form }
       );
       const data = await res.json();
@@ -123,7 +144,14 @@ export function AuditInput() {
         if (res.status === 401) toast.error(data.error);
         return;
       }
-      setResult({ findings: data.findings, summary: data.summary, dynamic: data.dynamic });
+      setResult({
+        findings: data.findings,
+        summary: data.summary,
+        dynamic: data.dynamic,
+        bundle: data.bundle,
+        guidedChecklist: data.guidedChecklist,
+        notes: data.notes,
+      });
     } catch {
       toast.error("Request failed");
     } finally {
@@ -183,17 +211,29 @@ export function AuditInput() {
             />
           </div>
         )}
-        {(mode === "image" || mode === "apk") && (
+        {(mode === "image" || mode === "apk" || mode === "ios") && (
           <label className="flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-md p-6 cursor-pointer hover:bg-accent/40 transition-colors text-center">
             <input
               type="file"
               className="sr-only"
-              accept={mode === "image" ? "image/png,image/jpeg,image/webp" : ".apk"}
+              accept={
+                mode === "image"
+                  ? "image/png,image/jpeg,image/webp"
+                  : mode === "ios"
+                    ? ".ipa"
+                    : ".apk"
+              }
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               disabled={loading}
             />
             <span className="text-sm font-medium">
-              {file ? file.name : mode === "image" ? "Upload a UI screenshot" : "Upload an APK"}
+              {file
+                ? file.name
+                : mode === "image"
+                  ? "Upload a UI screenshot"
+                  : mode === "ios"
+                    ? "Upload an .ipa"
+                    : "Upload an APK"}
             </span>
             <span className="text-xs text-muted-foreground">
               {file ? `${(file.size / 1024).toFixed(0)} KB` : "Click to choose"}
@@ -210,7 +250,99 @@ export function AuditInput() {
       {result?.error && (
         <p className="text-sm text-destructive mt-3">{result.error}</p>
       )}
-      {result?.findings && (
+      {result?.bundle && (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-md border p-3">
+            <p className="text-sm font-medium mb-1.5">Bundle (static metadata)</p>
+            <dl className="text-xs space-y-1 text-muted-foreground">
+              <div className="flex gap-2">
+                <dt className="font-medium text-foreground w-28 shrink-0">Display name</dt>
+                <dd>{result.bundle.displayName ?? "—"}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="font-medium text-foreground w-28 shrink-0">Bundle ID</dt>
+                <dd className="font-mono">{result.bundle.bundleId ?? "—"}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="font-medium text-foreground w-28 shrink-0">Version</dt>
+                <dd>{result.bundle.version ?? "—"}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="font-medium text-foreground w-28 shrink-0">Minimum OS</dt>
+                <dd>{result.bundle.minimumOsVersion ?? "—"}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="font-medium text-foreground w-28 shrink-0">Localizations</dt>
+                <dd>{(result.bundle.localizations ?? []).length} declared</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="font-medium text-foreground w-28 shrink-0">Icons</dt>
+                <dd>
+                  {result.bundle.iconNames2x?.length ?? 0} @2x ·{" "}
+                  {result.bundle.iconNames3x?.length ?? 0} @3x
+                  {result.bundle.hasAssetsCar ? " · Assets.car present" : ""}
+                </dd>
+              </div>
+            </dl>
+            {result.bundle.plistReadable === false && (
+              <p className="text-xs text-amber-600 mt-1.5">
+                Info.plist could not be read — no static findings produced.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <p className="text-sm font-medium mb-1.5">
+              Static findings ({result.findings?.length ?? 0})
+            </p>
+            <p className="text-xs text-muted-foreground mb-1.5">
+              Static metadata only — bundle inspection cannot prove a live
+              failure, so every result needs manual review.
+            </p>
+            {(result.findings?.length ?? 0) === 0 ? (
+              <p className="text-xs text-muted-foreground">No static flags.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {(result.findings as { criterion?: string; message?: string; severity?: string }[]).map((f, i) => (
+                  <li key={i} className="text-xs bg-muted/50 rounded-md p-2">
+                    <span className="font-mono font-medium">{f.criterion ?? "—"}</span>{" "}
+                    <span className="text-muted-foreground">({f.severity ?? "needs_review"})</span>
+                    <span className="text-muted-foreground block mt-0.5">
+                      {f.message ?? ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="rounded-md border border-dashed p-3">
+            <p className="text-sm font-medium mb-1">
+              Dynamic checks (macOS only)
+            </p>
+            <p className="text-xs text-muted-foreground mb-2">
+              VoiceOver and Simulator testing requires macOS / Xcode and cannot
+              run on this host. Complete these steps manually on a Mac.
+            </p>
+            <ol className="list-decimal list-inside space-y-1">
+              {(result.guidedChecklist ?? []).map((step) => (
+                <li key={step.id} className="text-xs">
+                  <span className="font-mono text-muted-foreground">{step.wcagSc}</span>{" "}
+                  {step.instruction}
+                </li>
+              ))}
+            </ol>
+            {result.notes && result.notes.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {result.notes.map((n, i) => (
+                  <li key={i} className="text-xs text-muted-foreground">• {n}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+      {result?.findings && !result?.bundle && (
         <div className="mt-4">
           <p className="text-sm font-medium mb-2">
             {result.findings.length} findings
