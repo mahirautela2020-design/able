@@ -7,6 +7,9 @@ import { crawl, isBotBlocked } from "@/engine/crawl";
 import { computeComplianceMatrix, buildProgress } from "@/engine/normalize";
 import { captureAriaSnapshot } from "@/lib/sr/snapshot";
 import { captureLiveAnnouncements } from "@/lib/sr/announcer";
+import { captureAxTree } from "@/engine/ax-tree";
+import { runAxChecks } from "@/engine/ax-checks";
+import { axTreeToTranscript } from "@/engine/sr-speech";
 import {
   updateAuditStatus,
   updateAuditProgress,
@@ -109,6 +112,19 @@ export const auditUrl = inngest.createFunction(
 
           const allFindingsForPage = [...findings, ...keyboardResult.findings];
 
+          // P11: AX-tree capture + deterministic checks (best-effort)
+          let axTranscript: string[] = [];
+          try {
+            const axNodes = await captureAxTree(page);
+            if (axNodes.length > 0) {
+              const axFindings = runAxChecks(axNodes);
+              allFindingsForPage.push(...axFindings);
+              axTranscript = axTreeToTranscript(axNodes);
+            }
+          } catch {
+            // AX capture is best-effort
+          }
+
           let srSnapshot = null;
           let srAnnouncements: Array<{ text: string; timestamp: number; source: string }> = [];
           try {
@@ -140,6 +156,17 @@ export const auditUrl = inngest.createFunction(
               const announcementsUrl = await uploadEvidence(announcementsJson, announcementsPath, "application/json");
               srEvidence.srAnnouncementsUrl = announcementsUrl;
               srEvidence.srAnnouncementCount = srAnnouncements.length;
+            }
+          } catch {
+            // Best-effort upload
+          }
+          try {
+            if (axTranscript.length > 0) {
+              const transcriptJson = Buffer.from(JSON.stringify(axTranscript), "utf-8");
+              const transcriptPath = `evidence/sr/${auditId}/${i}/ax-transcript.json`;
+              const transcriptUrl = await uploadEvidence(transcriptJson, transcriptPath, "application/json");
+              srEvidence.axTranscriptUrl = transcriptUrl;
+              srEvidence.axTranscriptLineCount = axTranscript.length;
             }
           } catch {
             // Best-effort upload
