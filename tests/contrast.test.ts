@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
+  AA_LARGE,
+  AA_NORMAL,
+  AAA_LARGE,
+  AAA_NORMAL,
   contrastRatio,
   contrastVerdict,
   normalizeColor,
@@ -63,5 +67,24 @@ describe("contrast", () => {
     expect(fix.ratio).toBeGreaterThanOrEqual(4.5);
     expect(fix.fg).toMatch(/^#[0-9a-f]{6}$/);
     expect(fix.bg).toBe("#ffffff");
+  });
+
+  it("suggestFix respects an explicit AAA normal-text target (7:1)", () => {
+    const fix = suggestFix("#7a7a7a", "#ffffff", AAA_NORMAL);
+    expect(fix.ratio).toBeGreaterThanOrEqual(AAA_NORMAL);
+  });
+
+  it("suggestFix respects an explicit AA large-text target (3:1) — needs less darkening than normal text", () => {
+    const large = suggestFix("#a0a0a0", "#ffffff", AA_LARGE);
+    const normal = suggestFix("#a0a0a0", "#ffffff", AA_NORMAL);
+    expect(large.ratio).toBeGreaterThanOrEqual(AA_LARGE);
+    expect(normal.ratio).toBeGreaterThanOrEqual(AA_NORMAL);
+    // Meeting a lower ratio needs a less extreme (lighter) foreground.
+    expect(hexToRgb(large.fg).r).toBeGreaterThanOrEqual(hexToRgb(normal.fg).r);
+  });
+
+  it("suggestFix respects an explicit AAA large-text target (4.5:1)", () => {
+    const fix = suggestFix("#a0a0a0", "#ffffff", AAA_LARGE);
+    expect(fix.ratio).toBeGreaterThanOrEqual(AAA_LARGE);
   });
 });

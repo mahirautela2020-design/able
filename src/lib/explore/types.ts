@@ -21,6 +21,7 @@ export interface InspectedElement {
   ancestors: string[];
   bbox: Bbox;
   computed: { color: string; backgroundColor: string };
+  hasText: boolean;
 }
 
 export interface ContrastPairSample {

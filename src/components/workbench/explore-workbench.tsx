@@ -67,6 +67,9 @@ interface ExploreWorkbenchProps {
   scopePages: { id: string; page_title: string | null }[];
   auditUrl: string;
   auditCreatedAt: string;
+  /** Real audit id for Contrast Lab finding persistence; null in
+   * disconnected/demo contexts. */
+  auditId?: string | null;
 }
 
 export function ExploreWorkbench({
@@ -75,6 +78,7 @@ export function ExploreWorkbench({
   scopePages,
   auditUrl,
   auditCreatedAt,
+  auditId = null,
 }: ExploreWorkbenchProps) {
   const [mode, setMode] = useState<WorkbenchMode>("view");
 
@@ -85,7 +89,7 @@ export function ExploreWorkbench({
         <span className="text-xs text-muted-foreground">
           {mode === "view"
             ? "Findings list"
-            : "Interactive explore (same-origin demo)"}
+            : "Interactive explore (proxied live preview)"}
         </span>
       </div>
       <div className="flex-1 min-h-0">
@@ -97,7 +101,7 @@ export function ExploreWorkbench({
             auditCreatedAt={auditCreatedAt}
           />
         ) : (
-          <ExplorePanel targetUrl={targetUrl} />
+          <ExplorePanel targetUrl={targetUrl} auditId={auditId} />
         )}
       </div>
     </div>

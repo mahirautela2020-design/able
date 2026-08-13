@@ -165,6 +165,32 @@ export async function insertFindings(
   if (error) throw error;
 }
 
+/**
+ * Resolve the audit_pages row id for a given audit + page URL — used by
+ * the Contrast Lab finding route, which only knows the page URL the Explore
+ * panel is showing, not the DB page id. Falls back to the audit's first
+ * scanned page when no exact URL match exists (still lets a manual flag
+ * attach to *some* page rather than failing outright).
+ */
+export async function getAuditPageId(
+  auditId: string,
+  pageUrl?: string
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("audit_pages")
+    .select("id, page_url")
+    .eq("audit_id", auditId);
+
+  if (error) throw error;
+  if (!data || data.length === 0) return null;
+
+  if (pageUrl) {
+    const exact = data.find((p) => p.page_url === pageUrl);
+    if (exact) return exact.id;
+  }
+  return data[0].id;
+}
+
 export async function getFindingsForAudit(auditId: string) {
   const { data, error } = await supabase
     .from("findings")

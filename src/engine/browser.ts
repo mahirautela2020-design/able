@@ -35,10 +35,13 @@ export async function launchBrowser(): Promise<Browser> {
   return browser;
 }
 
-export async function withPage<T>(fn: (page: Page) => Promise<T>): Promise<T> {
+export async function withPage<T>(
+  fn: (page: Page) => Promise<T>,
+  options?: { viewport?: { width: number; height: number } }
+): Promise<T> {
   const browser = await launchBrowser();
   const context = await browser.newContext({
-    viewport: { width: 1440, height: 900 },
+    viewport: options?.viewport ?? { width: 1440, height: 900 },
     userAgent: USER_AGENT,
   });
   const page = await context.newPage();

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateHostSync } from "@/lib/ssrf";
+import { ABLE_INSPECT_BRIDGE_SCRIPT } from "@/lib/explore/bridge-script";
 
 /**
  * Preview proxy — the "iframes can't load X-Frame-Options sites" hack.
@@ -84,6 +85,15 @@ export async function GET(request: NextRequest) {
     // Make our response iframe-able: we simply don't set the blocking
     // headers. Also strip any CSP meta tags that would re-block framing.
     html = html.replace(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>/gi, "");
+
+    // Inject the Explore workbench's inspect bridge. The proxy serves this
+    // document from OUR origin, so once framed it is same-origin with the
+    // parent app — the bridge becomes reachable via `contentWindow.__ableInspect`
+    // for any proxied page, not just the bundled demo fixture.
+    const bridgeTag = `<script>${ABLE_INSPECT_BRIDGE_SCRIPT}</script>`;
+    html = /<\/body>/i.test(html)
+      ? html.replace(/<\/body>/i, `${bridgeTag}</body>`)
+      : `${html}${bridgeTag}`;
 
     return new NextResponse(html, {
       status: 200,

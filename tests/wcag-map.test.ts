@@ -11,6 +11,7 @@ const base: InspectedElement = {
   ancestors: ["main"],
   bbox: { x: 0, y: 0, width: 100, height: 40 },
   computed: { color: "#000000", backgroundColor: "#ffffff" },
+  hasText: true,
   role: "button",
   name: "",
   touchTarget: { width: 120, height: 40 },

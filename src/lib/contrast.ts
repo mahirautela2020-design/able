@@ -16,10 +16,26 @@ export interface ContrastVerdict {
   level: "AAA" | "AA" | "fail";
 }
 
-const AA_NORMAL = 4.5;
-const AA_LARGE = 3.0;
-const AAA_NORMAL = 7.0;
-const AAA_LARGE = 4.5;
+export const AA_NORMAL = 4.5;
+export const AA_LARGE = 3.0;
+export const AAA_NORMAL = 7.0;
+export const AAA_LARGE = 4.5;
+
+export type ContrastTargetKey = "AA_NORMAL" | "AA_LARGE" | "AAA_NORMAL" | "AAA_LARGE";
+
+export const CONTRAST_TARGETS: Record<ContrastTargetKey, number> = {
+  AA_NORMAL,
+  AA_LARGE,
+  AAA_NORMAL,
+  AAA_LARGE,
+};
+
+export const CONTRAST_TARGET_LABELS: Record<ContrastTargetKey, string> = {
+  AA_NORMAL: "AA, normal text (4.5:1)",
+  AA_LARGE: "AA, large text (3:1)",
+  AAA_NORMAL: "AAA, normal text (7:1)",
+  AAA_LARGE: "AAA, large text (4.5:1)",
+};
 
 export function hexToRgb(hex: string): Rgb {
   let h = hex.replace("#", "").trim();

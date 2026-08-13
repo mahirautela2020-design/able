@@ -34,11 +34,14 @@ interface AbleBridge {
 
 interface ExplorePanelProps {
   targetUrl: string;
+  /** Real audit id — enables "Flag finding" persistence in the Contrast Lab.
+   * Omit (or pass null) in disconnected/demo contexts. */
+  auditId?: string | null;
 }
 
 const FOCUS_FLAGS = { trap: false, missingStyle: false, orderMismatch: false };
 
-export function ExplorePanel({ targetUrl }: ExplorePanelProps) {
+export function ExplorePanel({ targetUrl, auditId = null }: ExplorePanelProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const [pickerActive, setPickerActive] = useState(true);
@@ -46,6 +49,9 @@ export function ExplorePanel({ targetUrl }: ExplorePanelProps) {
   const [hoverBox, setHoverBox] = useState<Bbox | null>(null);
   const [hoverLabel, setHoverLabel] = useState<string | null>(null);
   const [picked, setPicked] = useState<InspectedElement | null>(null);
+  const [pickedViewport, setPickedViewport] = useState<{ width: number; height: number } | null>(
+    null
+  );
 
   const [steps, setSteps] = useState<KeyboardStep[]>([]);
   const [current, setCurrent] = useState(0);
@@ -89,6 +95,13 @@ export function ExplorePanel({ targetUrl }: ExplorePanelProps) {
       setPicked(el);
       if (el) {
         getBridge()?.highlight(el.selector);
+        // Record the iframe's rendered size at pick time — the contrast
+        // finding route re-navigates server-side at this exact viewport so
+        // the crop's coordinates line up with the bbox the picker captured.
+        const frame = iframeRef.current;
+        if (frame) {
+          setPickedViewport({ width: frame.clientWidth, height: frame.clientHeight });
+        }
       }
     },
     [getBridge]
@@ -206,7 +219,16 @@ export function ExplorePanel({ targetUrl }: ExplorePanelProps) {
       <div className="flex-1 relative min-w-0 bg-white">
         <iframe
           ref={iframeRef}
-          src={targetUrl}
+          // Routed through /api/preview-proxy so the audited page is served
+          // from OUR origin — this is what makes contentWindow.__ableInspect
+          // reachable for real (non-same-origin) audited sites, not just the
+          // bundled demo fixture. Trust note: `allow-same-origin` means the
+          // proxied page's own scripts run same-origin with this app (same
+          // pattern already used for the read-only Snapshots preview in
+          // workbench.tsx); the SSRF guard still blocks private/internal
+          // targets, but this is a real trust boundary worth revisiting if
+          // Explore ever needs to isolate untrusted third-party JS.
+          src={`/api/preview-proxy?url=${encodeURIComponent(targetUrl)}`}
           title="Explore preview"
           sandbox="allow-scripts allow-same-origin allow-forms"
           className={`w-full h-full border-0 ${pickerActive && !pickerDisabled ? "pointer-events-none" : ""}`}
@@ -254,10 +276,11 @@ export function ExplorePanel({ targetUrl }: ExplorePanelProps) {
           </div>
         )}
 
-        {/* Cross-origin degradation banner */}
+        {/* Degradation banner — the proxy couldn't serve an inspectable page
+            (non-HTML response, oversized page, or SSRF-blocked host). */}
         {pickerDisabled && (
           <div className="absolute inset-x-0 bottom-0 p-2 text-center text-xs bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
-            This target cannot be inspected in-place (cross-origin).{" "}
+            This target cannot be inspected in-place.{" "}
             <a href={targetUrl} target="_blank" rel="noopener noreferrer" className="underline">
               Open in new tab
             </a>
@@ -291,7 +314,13 @@ export function ExplorePanel({ targetUrl }: ExplorePanelProps) {
 
         <section className="border-b">
           <SectionTitle title="Live contrast" />
-          <ContrastFix element={picked} onApply={handleApplyFix} />
+          <ContrastFix
+            element={picked}
+            onApply={handleApplyFix}
+            auditId={auditId}
+            pageUrl={targetUrl}
+            viewport={pickedViewport}
+          />
         </section>
 
         <section className="border-b">
