@@ -40,6 +40,7 @@ export default async function ExplorePage({
     <div className="h-full">
       <ExploreWorkbench
         targetUrl="/explore-demo.html"
+        auditId={auditId}
         findings={findings}
         scopePages={scopePages}
         auditUrl={auditUrl}
