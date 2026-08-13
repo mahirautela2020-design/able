@@ -55,6 +55,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [levelFilter, setLevelFilter] = useState<"ALL" | "A" | "AA" | "AAA">("ALL");
   const [previewKey, setPreviewKey] = useState(0); // reload iframe
   const [frameBlocked, setFrameBlocked] = useState(false);
+  const [showScreenshot, setShowScreenshot] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [now, setNow] = useState(0);
   const [startedAt, setStartedAt] = useState(0);
@@ -414,61 +415,74 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           </div>
         )}
 
-        {/* Preview: sandboxed live iframe; when the site blocks embedding
-            (X-Frame-Options/CSP), show the full-page screenshot captured
-            during the audit instead of a dead panel */}
+        {/* Preview: sandboxed live iframe. For sites that block embedding
+            (X-Frame-Options/CSP), we PROXY the page through our own origin
+            (/api/preview-proxy) — the iframe sees OUR headers, so the
+            browser renders it. The audited screenshot stays available via
+            the "Audited screenshot" toggle. */}
         <div className="flex-1 min-h-0 bg-white flex relative">
           <iframe
             key={previewKey}
-            src={targetUrl}
+            src={
+              frameBlocked
+                ? `/api/preview-proxy?url=${encodeURIComponent(targetUrl)}`
+                : targetUrl
+            }
             title={`Live preview of ${targetUrl}`}
             sandbox="allow-scripts allow-forms allow-popups"
             className={`w-full h-full border-0 ${frameBlocked ? "hidden" : ""}`}
           />
           {frameBlocked && (
             <div className="absolute inset-0 flex flex-col bg-background">
-              {firstScreenshot ? (
-                <>
-                  <div className="flex items-center justify-between px-3 py-1.5 border-b bg-muted/20">
-                    <p className="text-xs text-muted-foreground">
-                      {targetUrl} blocks embedding — showing the audited screenshot
-                    </p>
-                    <a
-                      href={targetUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
+              {/* Toolbar for blocked sites: proxied live preview vs screenshot */}
+              <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b bg-muted/20">
+                <p className="text-xs text-muted-foreground min-w-0 truncate">
+                  {targetUrl} blocks embedding — previewing via proxy
+                </p>
+                <div className="flex items-center gap-2 shrink-0">
+                  {firstScreenshot && (
+                    <button
+                      onClick={() => setShowScreenshot((s) => !s)}
+                      className={`text-xs px-2 py-1 rounded border transition-colors ${
+                        showScreenshot
+                          ? "bg-primary text-primary-foreground"
+                          : "hover:bg-accent/50"
+                      }`}
                     >
-                      Open live site
-                    </a>
-                  </div>
-                  <div className="flex-1 overflow-auto">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={firstScreenshot}
-                      alt={`Full-page screenshot of ${targetUrl} captured during audit`}
-                      className="w-full"
-                    />
-                  </div>
-                </>
-              ) : (
-                <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-6">
-                  <p className="text-sm font-medium">
-                    This site doesn&apos;t allow embedding in previews
-                  </p>
-                  <p className="text-xs text-muted-foreground max-w-sm">
-                    {targetUrl} sends X-Frame-Options / CSP headers that block
-                    iframe previews. The audit itself is unaffected.
-                  </p>
+                      {showScreenshot ? "Live preview" : "Audited screenshot"}
+                    </button>
+                  )}
                   <a
                     href={targetUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+                    className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
                   >
-                    Open in new tab
+                    Open live site
                   </a>
                 </div>
+              </div>
+
+              {/* Screenshot view (toggle) */}
+              {showScreenshot && firstScreenshot ? (
+                <div className="flex-1 overflow-auto">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={firstScreenshot}
+                    alt={`Full-page screenshot of ${targetUrl} captured during audit`}
+                    className="w-full"
+                  />
+                </div>
+              ) : (
+                !showScreenshot && (
+                  <div className="flex-1 overflow-auto">
+                    <iframe
+                      src={`/api/preview-proxy?url=${encodeURIComponent(targetUrl)}`}
+                      title={`Proxied preview of ${targetUrl}`}
+                      className="w-full h-full border-0"
+                    />
+                  </div>
+                )
               )}
             </div>
           )}
