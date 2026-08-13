@@ -57,6 +57,7 @@ PHASES=(
   "p9|P9_APK_DYNAMIC_SPEC.md|phase/p9-apk-dynamic|P9: APK dynamic testing (emulator + adb + uiautomator dump — live 4.1.2/2.5.8/1.4.3)"
   "p10|P10_IOS_SPEC.md|phase/p10-ios|P10: iOS IPA static analysis (plist/asset checks) + guided VoiceOver checklist"
   "p11|P11_SR_ENGINE_SPEC.md|phase/p11-sr-engine|P11: Deterministic browser screen-reader engine (AX-tree speech replay + 4.1.2/1.3.2 checks + SR preview)"
+  "p12|P12_CONTRAST_LAB_SPEC.md|phase/p12-contrast-lab|P12: Contrast Lab — click-to-inspect on live preview, WCAG AA/AAA + APCA contrast, nearest-passing-fix suggestion, CVD colorblind overlay"
 )
 
 run_phase() {
