@@ -30,12 +30,30 @@ interface WorkbenchProps {
   findings: WorkbenchFinding[];
 }
 
-const PRINCIPLES = [
-  { key: "1", label: "1. Perceivable" },
-  { key: "2", label: "2. Operable" },
-  { key: "3", label: "3. Understandable" },
-  { key: "4", label: "4. Robust" },
+export const PRINCIPLES = [
+  { key: "1", label: "1. Perceivable", principleName: "Perceivable" },
+  { key: "2", label: "2. Operable", principleName: "Operable" },
+  { key: "3", label: "3. Understandable", principleName: "Understandable" },
+  { key: "4", label: "4. Robust", principleName: "Robust" },
 ] as const;
+
+type LevelFilter = "ALL" | "A" | "AA" | "AAA";
+
+// wcag-registry.ts stores `principle` as the full word (e.g. "Perceivable"),
+// while the checklist tabs key off the numeric PRINCIPLES id — map through
+// principleName rather than comparing the two directly.
+export function filterScsByPrinciple<T extends { sc: WcagSuccessCriterion }>(
+  scList: T[],
+  principleKey: string,
+  levelFilter: LevelFilter
+): T[] {
+  const principleName = PRINCIPLES.find((p) => p.key === principleKey)?.principleName;
+  return scList.filter((s) => {
+    if (s.sc.principle !== principleName) return false;
+    if (levelFilter !== "ALL" && s.sc.level !== levelFilter) return false;
+    return true;
+  });
+}
 
 const SEVERITY_DOT: Record<string, string> = {
   critical: "bg-red-500",
@@ -161,11 +179,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
     return rows;
   }, [liveFindings, registry]);
 
-  const principleScs = scList.filter((s) => {
-    if (s.sc.principle !== activePrinciple) return false;
-    if (levelFilter !== "ALL" && s.sc.level !== levelFilter) return false;
-    return true;
-  });
+  const principleScs = filterScsByPrinciple(scList, activePrinciple, levelFilter);
 
   const activeFindings = activeSc ? bySc.get(activeSc) || [] : [];
 
