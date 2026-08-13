@@ -1,4 +1,4 @@
-import { contrastRatio } from "@/lib/audit/image-contrast";
+import { contrastRatio } from "@/lib/audit/color-math";
 
 /**
  * Deterministic dynamic checks on the parsed uiautomator hierarchy.
