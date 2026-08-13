@@ -1,6 +1,7 @@
 import { getAudit, getFindingsForAudit, createSignedUrl } from "@/lib/supabase/server";
 import { Workbench } from "@/components/workbench/workbench";
 import { NvdaPanel } from "@/components/workbench/nvda-panel";
+import { SrPreview } from "@/components/workbench/sr-preview";
 import { notFound } from "next/navigation";
 
 export const metadata = {
@@ -62,6 +63,12 @@ export default async function WorkbenchPage({
           findings={signedFindings}
         />
       </div>
+      {/* SrPreview (P11, AX-tree based) is the deterministic screen-reader
+          engine — works for every user on every deployment, no local install.
+          NvdaPanel is real NVDA, opt-in, only works on a machine that has
+          NVDA actually installed and running — shown second as a bonus
+          verification layer for whoever has it, not the primary signal. */}
+      <SrPreview auditId={auditId} />
       <NvdaPanel auditId={auditId} />
     </div>
   );
