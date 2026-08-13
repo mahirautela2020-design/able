@@ -20,6 +20,26 @@ import sharp from "sharp";
 
 const MAX_PAGES = parseInt(process.env.MAX_PAGES || "5", 10);
 
+/** Hard cap per page-scan step — a single pathological page must not stall
+ * the whole audit forever (koa.com hung 200s+ on one page). On timeout the
+ * page is marked failed and the audit continues with the next page. */
+const PAGE_SCAN_TIMEOUT_MS = 90_000;
+
+/** Race a promise against a deadline; on expiry resolves with "TIMEOUT". */
+async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T | "TIMEOUT"> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<"TIMEOUT">((resolve) => {
+        timer = setTimeout(() => resolve("TIMEOUT"), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export const auditUrl = inngest.createFunction(
   { id: "audit-url", concurrency: 1, retries: 1, triggers: [{ event: "audit/url" }] },
   async ({ event, step }) => {
@@ -51,11 +71,15 @@ export const auditUrl = inngest.createFunction(
         let pageId = "";
         const telemetry = { networkidleTimedOut: false };
 
-        const result = await withPage(async (page) => {
-          await page.goto(pageUrl, {
-            waitUntil: "domcontentloaded",
-            timeout: 20_000,
-          });
+        // Per-page hard deadline: a pathological page (heavy JS, endless
+        // network) must not stall the whole audit. On timeout we record a
+        // failed page row and continue with the next page.
+        const scanOutcome = await withDeadline(
+          withPage(async (page) => {
+            await page.goto(pageUrl, {
+              waitUntil: "domcontentloaded",
+              timeout: 20_000,
+            });
 
           const title = await page.title();
           const finalUrl = page.url();
@@ -234,7 +258,40 @@ export const auditUrl = inngest.createFunction(
             },
             wcagScore: matrix.wcagScore,
           };
-        });
+          }),
+          PAGE_SCAN_TIMEOUT_MS
+        );
+
+        // Handle per-page timeout: record the page as failed, keep going.
+        if (scanOutcome === "TIMEOUT") {
+          try {
+            await insertAuditPage({
+              audit_id: auditId,
+              page_url: pageUrl,
+              page_title: null,
+              status: "failed",
+              wcag_score: null,
+              axe_version: null,
+              consent_dismissed: null,
+              settled_at_ms: null,
+              networkidle_timed_out: true,
+              error_code: "PAGE_SCAN_TIMEOUT",
+              evidence: { timeoutMs: PAGE_SCAN_TIMEOUT_MS },
+              scanned_at: null,
+            });
+          } catch {
+            // best-effort
+          }
+          await updateAuditProgress(
+            auditId,
+            buildProgress(
+              (pages as string[]).length,
+              i + 1,
+              pageUrl
+            )
+          );
+          return null;
+        }
 
         await updateAuditProgress(
           auditId,
@@ -245,11 +302,11 @@ export const auditUrl = inngest.createFunction(
           )
         );
 
-        if (result) {
-          allFindings.push(result);
+        if (scanOutcome) {
+          allFindings.push(scanOutcome);
         }
 
-        return result;
+        return scanOutcome;
       });
     }
 
