@@ -30,6 +30,7 @@ export function AuthForm() {
     }
     setLoading(true);
     try {
+      if (!supabase) throw new Error("Authentication is not configured");
       if (mode === "signin") {
         const { error } = await supabase.auth.signInWithPassword({
           email: trimmed,

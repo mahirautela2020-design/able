@@ -25,7 +25,7 @@ export function ConnectFigmaButton() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase?.auth.getSession().then(({ data }) => {
       setSession(Boolean(data.session));
     });
   }, []);
@@ -36,7 +36,7 @@ export function ConnectFigmaButton() {
     try {
       const {
         data: { session: s },
-      } = await supabase.auth.getSession();
+      } = await (supabase?.auth.getSession() ?? Promise.resolve({ data: { session: null } }));
       if (!s) {
         // No browser session — take the user to the sign-in page.
         window.location.href = "/auth";

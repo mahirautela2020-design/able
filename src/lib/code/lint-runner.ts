@@ -113,6 +113,57 @@ function isAccessibilityRule(ruleId: string): boolean {
   return a11yRules.some((r) => ruleId.startsWith(r));
 }
 
+const AXE_PACKAGE_NAME = "axe-core";
+
+/** Read the pinned axe-core version from the project's own package.json (RISKS #11 —
+ * the code-lint runner must use the SAME pin as web scans, never re-pin or drift). */
+export function getPinnedAxeVersion(): string | null {
+  try {
+    const packageJsonPath = join(process.cwd(), "package.json");
+    if (!existsSync(packageJsonPath)) return null;
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    return (
+      packageJson.dependencies?.[AXE_PACKAGE_NAME] ??
+      packageJson.devDependencies?.[AXE_PACKAGE_NAME] ??
+      null
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** True when the resolved axe-core module version satisfies the package.json pin.
+ * An exact pin (no range operator) must match verbatim; `^`/`~` ranges compare
+ * against the floor so an in-range upgrade still passes but a downgrade or major
+ * jump is flagged as drift. */
+export function resolvedAxeMatchesPin(pinned: string | null, resolved: string): boolean {
+  if (!pinned) return true;
+  const spec = pinned.trim();
+  const actual = resolved.trim();
+
+  if (!/^[\^~]/.test(spec)) {
+    return spec === actual;
+  }
+
+  const isTilde = spec.startsWith("~");
+  const floor = spec.replace(/^[\^~]/, "").split(".").map((n) => parseInt(n, 10) || 0);
+  const a = actual.split(".").map((n) => parseInt(n, 10) || 0);
+
+  if ((floor[0] ?? 0) !== (a[0] ?? 0)) return false;
+  if (isTilde) {
+    // `~x.y.z` stays within the same minor line.
+    if ((a[1] ?? 0) !== (floor[1] ?? 0)) return false;
+    return (a[2] ?? 0) >= (floor[2] ?? 0);
+  }
+  // `^x.y.z` allows any >= floor within the same major.
+  if ((a[1] ?? 0) > (floor[1] ?? 0)) return true;
+  if ((a[1] ?? 0) < (floor[1] ?? 0)) return false;
+  return (a[2] ?? 0) >= (floor[2] ?? 0);
+}
+
 async function runAxeHtml(repoPath: string): Promise<CodeLintFinding[]> {
   const findings: CodeLintFinding[] = [];
 
@@ -120,21 +171,24 @@ async function runAxeHtml(repoPath: string): Promise<CodeLintFinding[]> {
     const htmlFiles = findHtmlFiles(repoPath);
     if (htmlFiles.length === 0) return findings;
 
-    // Use the pinned axe-core version from the project's package.json
-    const packageJsonPath = join(process.cwd(), "package.json");
-    if (existsSync(packageJsonPath)) {
-      try {
-        const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
-        const rawVersion = packageJson.dependencies?.["axe-core"] || packageJson.devDependencies?.["axe-core"];
-        if (!rawVersion) return findings;
-      } catch {
-        // keep default
-      }
+    const axeCore = (await import("axe-core")).default;
+    const pinned = getPinnedAxeVersion();
+    const resolved = (axeCore as { version?: string }).version;
+
+    // Enforce the §2 pin: a silently-upgraded axe-core surfaces as a needs-review
+    // signal rather than being silently ignored (RISKS #11).
+    if (resolved && !resolvedAxeMatchesPin(pinned, resolved)) {
+      findings.push({
+        rule_id: "axe-version-drift",
+        severity: "warning",
+        file: "package.json",
+        line: 0,
+        message: `Resolved axe-core ${resolved} does not match pinned ${pinned} — evidence may drift from web scans`,
+      });
     }
 
     for (const htmlFile of htmlFiles.slice(0, 10)) {
       try {
-        const axeCore = (await import("axe-core")).default;
         const { JSDOM } = await import("jsdom");
         const html = readFileSync(htmlFile, "utf-8");
         const dom = new JSDOM(html);

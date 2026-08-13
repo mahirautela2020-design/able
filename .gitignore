@@ -48,3 +48,4 @@ build-logs/
 # Supabase CLI temp state
 supabase/.temp/
 qa-token.txt
+vercel-token.txt

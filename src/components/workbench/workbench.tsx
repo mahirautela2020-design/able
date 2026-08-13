@@ -196,7 +196,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
     try {
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await (supabase?.auth.getSession() ?? Promise.resolve({ data: { session: null } }));
       const res = await fetch(`/api/audits/${auditId}/pdf`, {
         headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
       });
