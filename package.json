@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "verify:enterprise": "vitest run __tests__/enterprise __tests__/mcp",
+    "verify:p8": "vitest run tests/touch-targets.test.ts tests/icon-contrast.test.ts tests/detect-elements.test.ts",
     "verify": "npm run lint && npm run typecheck && npm run test && npm run build",
     "inngest:dev": "inngest dev"
   },
