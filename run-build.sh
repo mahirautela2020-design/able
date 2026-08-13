@@ -27,14 +27,14 @@ run_agent() {
   local ROLE="$1" KEY="$2" MODEL="$3" PROMPT="$4" LOGFILE="$5"
   shift 5
   if [ "$AGENT_BACKEND" = "claude" ]; then
-    local CTX=""
     # Claude loads CLAUDE.md + AGENTS.md automatically; append role/spec files
     # via --append-system-prompt-file (only existing files, no hard-fail).
+    # Use a real args array (NOT eval) so quoting survives on Windows git-bash.
+    local -a CMD=(claude -p "$PROMPT" --permission-mode bypassPermissions --max-turns 60)
     for f in "$@"; do
-      [ -f "$f" ] && CTX="$CTX --append-system-prompt-file \"$f\""
+      [ -f "$f" ] && CMD+=(--append-system-prompt-file "$f")
     done
-    # shellcheck disable=SC2086
-    eval claude -p "$PROMPT" --permission-mode bypassPermissions --max-turns 60 --verbose $CTX >> "$LOGFILE" 2>&1
+    "${CMD[@]}" >> "$LOGFILE" 2>&1
   else
     local FILES=()
     for f in "$@"; do
