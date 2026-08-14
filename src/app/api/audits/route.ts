@@ -13,7 +13,11 @@ export async function POST(request: Request) {
   const ip = getClientIp(request);
 
   try {
-    const { url } = await request.json();
+    const { url, modules } = await request.json();
+    const moduleIds: string[] | undefined =
+      Array.isArray(modules) && modules.every((m) => typeof m === "string")
+        ? modules
+        : undefined;
 
     if (!url || typeof url !== "string") {
       return Response.json(
@@ -56,6 +60,7 @@ export async function POST(request: Request) {
 
     const auditId = await insertAudit(url, {
       maxPages: parseInt(process.env.MAX_PAGES || "5", 10),
+      ...(moduleIds ? { modules: moduleIds } : {}),
     }, {
       userId: auth.ok ? auth.userId : null,
       ip,
@@ -63,7 +68,7 @@ export async function POST(request: Request) {
 
     await inngest.send({
       name: "audit/url",
-      data: { auditId, url },
+      data: moduleIds ? { auditId, url, modules: moduleIds } : { auditId, url },
     });
 
     return Response.json({ id: auditId }, { status: 201 });
