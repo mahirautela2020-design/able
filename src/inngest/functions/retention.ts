@@ -1,5 +1,5 @@
 import { inngest } from "@/inngest/client";
-import { cleanupExpiredData } from "@/lib/supabase/server";
+import { cleanupExpiredData, failStaleRunningAudits } from "@/lib/supabase/server";
 
 /**
  * Retention cron — runs daily, enforces the 24-hour TTL:
@@ -23,13 +23,20 @@ export const retention = inngest.createFunction(
       cleanupExpiredData()
     );
 
+    // System-wide sweep for audits stuck at status="running" that nobody's
+    // workbench tab is actively polling (the GET /api/audits/[id] route
+    // handles the actively-polled case on every request).
+    const staleAuditIds = await step.run("fail-stale-running", async () =>
+      failStaleRunningAudits()
+    );
+
     await step.run("log-cleanup", async () => {
       console.log(
-        `[retention] audits deleted: ${result.auditsDeleted}, figma connections revoked: ${result.connectionsDeleted}`
+        `[retention] audits deleted: ${result.auditsDeleted}, figma connections revoked: ${result.connectionsDeleted}, stale audits failed: ${staleAuditIds.length}`
       );
       return result;
     });
 
-    return result;
+    return { ...result, staleAuditsFailed: staleAuditIds.length };
   }
 );
