@@ -3,6 +3,7 @@ import {
   uploadEvidence,
 } from "@/lib/supabase/server";
 import { computeComplianceMatrix } from "@/engine/normalize";
+import { resolveModuleIds, getModuleWcagCoverage } from "@/lib/audit-modules";
 
 export async function buildAndStoreReport(
   auditId: string
@@ -39,7 +40,12 @@ export async function buildReportHtml(auditId: string): Promise<string> {
 
   if (!audit) return "<html><body><h1>Audit not found</h1></body></html>";
 
-  const matrix = computeComplianceMatrix(findings || []);
+  // Same module set the scan actually ran with — an audit's report must not
+  // claim a module-gated SC "passed" when that module was never enabled.
+  const configuredModules = (audit.config as { modules?: string[] } | null)?.modules;
+  const moduleIds = resolveModuleIds(configuredModules);
+  const coveredScIds = getModuleWcagCoverage(moduleIds);
+  const matrix = computeComplianceMatrix(findings || [], coveredScIds);
 
   const automated = (findings || []).filter(
     (f) => f.bucket === "automated"
