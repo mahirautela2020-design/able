@@ -13,7 +13,7 @@ function stubFetch() {
   );
 }
 
-describe("Workbench — left-column mode nav (regression: Contrast Lab/SR were buried in a toolbar button and a page-level section below the whole workbench)", () => {
+describe("Workbench — left-column mode nav (regression: Inspect/Screen Reader were buried in a toolbar button and a page-level section below the whole workbench)", () => {
   it("switching to 'Screen Reader' mode replaces the main area with the merged SrPreview+NvdaPanel panel", () => {
     stubFetch();
     render(
