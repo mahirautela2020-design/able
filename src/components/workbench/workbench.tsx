@@ -557,28 +557,39 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           </div>
         </div>
 
-        {/* Preview-blocked prompt: audit continues without preview */}
+        {/* Preview-blocked notice: single row (previously duplicated across
+            two stacked rows — a dismissible banner plus a second, permanent
+            toolbar with the same message). Owns the proxy-vs-screenshot
+            toggle and "Open live site" link — not dismissible, since
+            dismissing didn't change anything about the underlying block and
+            previously just hid the only place those controls lived. */}
         {frameBlocked && rightMode !== "explore" && (
           <div className="flex items-center justify-between gap-3 px-3 py-2 border-b bg-amber-50 dark:bg-amber-950/40 text-xs">
-            <p className="text-amber-800 dark:text-amber-300 min-w-0">
-              <span className="font-medium">{targetUrl}</span> blocks embedding — the
-              audit runs normally without the preview{firstScreenshot ? ", showing the captured screenshot instead" : ""}.
+            <p className="text-amber-800 dark:text-amber-300 min-w-0 truncate">
+              <span className="font-medium">{targetUrl}</span> blocks embedding — previewing via
+              proxy{firstScreenshot ? " (or view the captured screenshot)" : ""}.
             </p>
             <div className="flex items-center gap-2 shrink-0">
+              {firstScreenshot && (
+                <button
+                  onClick={() => setShowScreenshot((s) => !s)}
+                  className={`px-2 py-1 rounded border transition-colors ${
+                    showScreenshot
+                      ? "bg-primary text-primary-foreground border-transparent"
+                      : "border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                  }`}
+                >
+                  {showScreenshot ? "Live preview" : "Audited screenshot"}
+                </button>
+              )}
               <a
                 href={targetUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-2 py-1 rounded border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
               >
-                Open in new tab
+                Open live site
               </a>
-              <button
-                onClick={() => setFrameBlocked(false)}
-                className="px-2 py-1 rounded border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
-              >
-                Dismiss
-              </button>
             </div>
           </div>
         )}
@@ -593,7 +604,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
             (X-Frame-Options/CSP), we PROXY the page through our own origin
             (/api/preview-proxy) — the iframe sees OUR headers, so the
             browser renders it. The audited screenshot stays available via
-            the "Audited screenshot" toggle. */}
+            the "Audited screenshot" toggle in the banner above. */}
         <div className="flex-1 min-h-0 bg-white flex relative">
           <iframe
             key={previewKey}
@@ -608,36 +619,6 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           />
           {frameBlocked && (
             <div className="absolute inset-0 flex flex-col bg-background">
-              {/* Toolbar for blocked sites: proxied live preview vs screenshot */}
-              <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b bg-muted/20">
-                <p className="text-xs text-muted-foreground min-w-0 truncate">
-                  {targetUrl} blocks embedding — previewing via proxy
-                </p>
-                <div className="flex items-center gap-2 shrink-0">
-                  {firstScreenshot && (
-                    <button
-                      onClick={() => setShowScreenshot((s) => !s)}
-                      className={`text-xs px-2 py-1 rounded border transition-colors ${
-                        showScreenshot
-                          ? "bg-primary text-primary-foreground"
-                          : "hover:bg-accent/50"
-                      }`}
-                    >
-                      {showScreenshot ? "Live preview" : "Audited screenshot"}
-                    </button>
-                  )}
-                  <a
-                    href={targetUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
-                  >
-                    Open live site
-                  </a>
-                </div>
-              </div>
-
-              {/* Screenshot view (toggle) */}
               {showScreenshot && firstScreenshot ? (
                 <div className="flex-1 overflow-auto">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
