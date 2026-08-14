@@ -63,7 +63,7 @@ function ToggleButton({
 
 interface ExploreWorkbenchProps {
   targetUrl: string;
-  auditId: string;
+  auditId: string | null;
   findings: FindingRow[];
   scopePages: { id: string; page_title: string | null }[];
   auditUrl: string;

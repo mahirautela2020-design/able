@@ -34,7 +34,7 @@ interface AbleBridge {
 
 interface ExplorePanelProps {
   targetUrl: string;
-  auditId: string;
+  auditId: string | null;
 }
 
 const FOCUS_FLAGS = { trap: false, missingStyle: false, orderMismatch: false };

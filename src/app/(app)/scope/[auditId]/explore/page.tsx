@@ -21,10 +21,18 @@ export default async function ExplorePage({
   let scopePages: { id: string; page_title: string | null }[] = [];
   let auditUrl = "";
   let auditCreatedAt = "";
+  // targetUrl is ALWAYS the bundled demo fixture on this route — never a
+  // real audited page. Only pass the real auditId through when it actually
+  // matches that fixture; otherwise Contrast Lab's "Flag finding" would
+  // attach a phantom finding (sourced from the demo page) to an unrelated
+  // real audit's data (getAuditPageId falls back to that audit's first real
+  // scanned page when the demo URL matches none of its pages).
+  let matchedAuditId: string | null = null;
 
   try {
     const audit = getAuditFromFixture();
     if ((audit as Record<string, string>).id === auditId) {
+      matchedAuditId = auditId;
       findings = getFindingsFromFixture() as unknown as FindingRow[];
       scopePages = (getScopePagesFromFixture() as Array<{ id: string; page_title: string | null }>).map(
         (p) => ({ id: p.id, page_title: p.page_title })
@@ -40,7 +48,7 @@ export default async function ExplorePage({
     <div className="h-full">
       <ExploreWorkbench
         targetUrl="/explore-demo.html"
-        auditId={auditId}
+        auditId={matchedAuditId}
         findings={findings}
         scopePages={scopePages}
         auditUrl={auditUrl}
