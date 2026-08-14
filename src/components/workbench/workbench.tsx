@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { getWcagRegistry, type WcagSuccessCriterion } from "@/engine/wcag-registry";
 import { supabase, authHeaders } from "@/lib/supabase/client";
 import { ExplorePanel } from "@/components/workbench/explore/explore-panel";
+import { ScreenReaderPanel } from "@/components/workbench/explore/screen-reader-panel";
 
 export interface WorkbenchFinding {
   id: string;
@@ -73,11 +74,11 @@ const SEVERITY_DOT: Record<string, string> = {
 export function Workbench({ auditId, targetUrl, auditStatus, findings }: WorkbenchProps) {
   const router = useRouter();
   const [activeSc, setActiveSc] = useState<string | null>(null);
-  const [activePrinciple, setActivePrinciple] = useState<string>("1");
+  const [collapsedPrinciples, setCollapsedPrinciples] = useState<Set<string>>(new Set());
   const [levelFilter, setLevelFilter] = useState<"ALL" | "A" | "AA" | "AAA">("ALL");
   const [previewKey, setPreviewKey] = useState(0); // reload iframe
   const [frameBlocked, setFrameBlocked] = useState(false);
-  const [rightMode, setRightMode] = useState<"preview" | "explore">("preview");
+  const [mainMode, setMainMode] = useState<"preview" | "explore" | "screen-reader">("preview");
   const [showScreenshot, setShowScreenshot] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [editingUrl, setEditingUrl] = useState(false);
@@ -181,7 +182,14 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
     return rows;
   }, [liveFindings, registry]);
 
-  const principleScs = filterScsByPrinciple(scList, activePrinciple, levelFilter);
+  const principleGroups = useMemo(
+    () =>
+      PRINCIPLES.map((p) => ({
+        principle: p,
+        scs: filterScsByPrinciple(scList, p.key, levelFilter),
+      })),
+    [scList, levelFilter]
+  );
 
   const activeFindings = activeSc ? bySc.get(activeSc) || [] : [];
 
@@ -376,19 +384,26 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           )}
         </div>
 
-        {/* Principle tabs */}
+        {/* Mode nav: switches what the main (right) area shows. Checklist
+            stays visible in this column regardless of mode. */}
         <div className="flex border-b text-xs">
-          {PRINCIPLES.map((p) => (
+          {(
+            [
+              { key: "preview", label: "Checklist" },
+              { key: "explore", label: "Contrast Lab" },
+              { key: "screen-reader", label: "Screen Reader" },
+            ] as const
+          ).map((m) => (
             <button
-              key={p.key}
-              onClick={() => setActivePrinciple(p.key)}
+              key={m.key}
+              onClick={() => setMainMode(m.key)}
               className={`flex-1 py-2 px-1 font-medium transition-colors ${
-                activePrinciple === p.key
+                mainMode === m.key
                   ? "text-primary border-b-2 border-primary"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {p.key}
+              {m.label}
             </button>
           ))}
         </div>
@@ -410,14 +425,40 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           ))}
         </div>
 
-        {/* SC list for the active principle + level */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {principleScs.length === 0 && (
-            <p className="text-xs text-muted-foreground p-3">
-              No criteria under this principle and level.
-            </p>
-          )}
-          {principleScs.map(({ sc, count, status }) => (
+        {/* Checklist grouped by principle — always-visible labeled sections
+            (previously four unlabeled "1"/"2"/"3"/"4" tabs that only showed
+            which principle you were looking at after you'd already clicked
+            one). Collapsible per section, all expanded by default. */}
+        <div className="flex-1 overflow-y-auto p-2 space-y-2">
+          {principleGroups.map(({ principle, scs }) => {
+            const isCollapsed = collapsedPrinciples.has(principle.key);
+            return (
+              <div key={principle.key} className="border rounded-md overflow-hidden">
+                <button
+                  onClick={() =>
+                    setCollapsedPrinciples((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(principle.key)) next.delete(principle.key);
+                      else next.add(principle.key);
+                      return next;
+                    })
+                  }
+                  aria-expanded={!isCollapsed}
+                  className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold bg-muted/40 hover:bg-muted/60 transition-colors"
+                >
+                  <span>{principle.label}</span>
+                  <span className="text-muted-foreground font-normal">
+                    {scs.length} {isCollapsed ? "▸" : "▾"}
+                  </span>
+                </button>
+                {!isCollapsed && (
+                  <div className="p-2 space-y-1">
+                    {scs.length === 0 && (
+                      <p className="text-xs text-muted-foreground p-2">
+                        No criteria under this level.
+                      </p>
+                    )}
+                    {scs.map(({ sc, count, status }) => (
             <button
               key={sc.id}
               onClick={() => setActiveSc(activeSc === sc.id ? null : sc.id)}
@@ -444,7 +485,12 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
                 {sc.manualTest ? " · manual" : ""} · {sc.level}
               </p>
             </button>
-          ))}
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* Focused check affordance */}
@@ -538,17 +584,6 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
             >
               Reload preview
             </button>
-            <button
-              onClick={() => setRightMode((m) => (m === "explore" ? "preview" : "explore"))}
-              className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
-                rightMode === "explore"
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-accent/50"
-              }`}
-              title="Click-to-inspect contrast, APCA, CVD simulation, nearest-fix suggestions"
-            >
-              {rightMode === "explore" ? "Preview" : "Contrast Lab"}
-            </button>
             {/* Re-run always available (esp. after a failure) */}
             <button
               onClick={() => handleRerun()}
@@ -575,7 +610,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
             toggle and "Open live site" link — not dismissible, since
             dismissing didn't change anything about the underlying block and
             previously just hid the only place those controls lived. */}
-        {frameBlocked && rightMode !== "explore" && (
+        {frameBlocked && mainMode === "preview" && (
           <div className="flex items-center justify-between gap-3 px-3 py-2 border-b bg-amber-50 dark:bg-amber-950/40 text-xs">
             <p className="text-amber-800 dark:text-amber-300 min-w-0 truncate">
               <span className="font-medium">{targetUrl}</span> blocks embedding — previewing via
@@ -606,9 +641,13 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           </div>
         )}
 
-        {rightMode === "explore" ? (
+        {mainMode === "explore" ? (
           <div className="flex-1 min-h-0 bg-white">
             <ExplorePanel targetUrl={targetUrl} auditId={auditId} />
+          </div>
+        ) : mainMode === "screen-reader" ? (
+          <div className="flex-1 min-h-0 bg-white">
+            <ScreenReaderPanel auditId={auditId} />
           </div>
         ) : (
         <>
