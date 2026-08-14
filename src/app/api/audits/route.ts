@@ -1,6 +1,7 @@
 import { sanitizeUrl, validateHost } from "@/engine/crawl";
 import { insertAudit, getRecentAudits, deleteAudit, countAuditsByIp, getAudit } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
+import { getClientIp } from "@/lib/http";
 import { inngest } from "@/inngest/client";
 
 const ANON_DAILY_LIMIT = parseInt(process.env.ANON_DAILY_LIMIT || "5", 10);
@@ -103,11 +104,6 @@ export async function GET(request: Request) {
 }
 
 /** Best-effort client IP from Vercel/Next headers. */
-function getClientIp(request: Request): string | null {
-  const fwd = request.headers.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0].trim();
-  return request.headers.get("x-real-ip") ?? null;
-}
 
 export async function DELETE(request: Request) {
   // Destructive but owner-scoped: signed-in users delete their own audits;

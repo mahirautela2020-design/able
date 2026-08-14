@@ -86,6 +86,20 @@ describe("ContrastFix", () => {
     expect(screen.getByText(/Suggested fix/)).toBeInTheDocument();
   });
 
+  it("verdict label reflects the selected large-text target, not just AA-normal (regression: contrastVerdict ignored largeText)", () => {
+    // #767676 on white is ~4.54:1 — passes AAA at large text (needs 4.5) but
+    // only AA at normal text (needs 7.0 for AAA-normal). If the verdict were
+    // computed with largeText always false, the label would wrongly say
+    // "passes AA" even after the user selects AAA + Large text.
+    const borderline: InspectedElement = { ...failing, computed: { color: "#767676", backgroundColor: "#ffffff" } };
+    render(<ContrastFix element={borderline} auditId="audit-1" onApply={() => {}} />);
+
+    fireEvent.click(screen.getByTestId("target-level-aaa"));
+    fireEvent.click(screen.getByTestId("target-size-large"));
+
+    expect(screen.getByTestId("contrast-verdict")).toHaveTextContent("passes AAA");
+  });
+
   it("switching to large text lowers the required ratio (fewer fixes needed)", () => {
     // ~4.0:1 — fails AA-normal (4.5) but passes AA-large (3.0)
     const midGray: InspectedElement = { ...failing, computed: { color: "#7f7f7f", backgroundColor: "#ffffff" } };

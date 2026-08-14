@@ -133,7 +133,12 @@ async function enrichNode(
       session.send("DOM.getBoxModel", { backendNodeId }) as Promise<BoxModelResult>
     );
     const model = boxed?.model;
-    if (model?.content && model.content.length >= 2 && model.width && model.height) {
+    if (
+      model?.content &&
+      model.content.length >= 2 &&
+      typeof model.width === "number" &&
+      typeof model.height === "number"
+    ) {
       rect = {
         x: model.content[0],
         y: model.content[1],

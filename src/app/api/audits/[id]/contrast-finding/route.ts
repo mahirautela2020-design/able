@@ -2,18 +2,13 @@ import sharp from "sharp";
 import { withPage } from "@/engine/browser";
 import { getAudit, getAuditPageId, insertFindings, uploadEvidence } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
+import { getClientIp } from "@/lib/http";
 import { sanitizeUrl, validateHost } from "@/lib/ssrf";
 import { contrastRatio, contrastVerdict } from "@/lib/contrast";
 import { buildContrastFinding } from "@/lib/audit/contrast-finding";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
-
-function getClientIp(request: Request): string | null {
-  const fwd = request.headers.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0].trim();
-  return request.headers.get("x-real-ip") ?? null;
-}
 
 interface ContrastFindingBody {
   pageUrl?: string;
@@ -151,35 +146,37 @@ export async function POST(
     return Response.json({ error: "No scanned page found for this audit" }, { status: 404 });
   }
 
-  const computed = buildContrastFinding({
-    auditId,
-    pageId,
-    selector,
-    elementHtml: elementHtml ?? null,
-    fg,
-    bg,
-    hasText: hasText === true,
-  });
-
   // Re-navigate and crop a fresh evidence screenshot around the picked
   // element, at the same viewport the user was looking at. fullPage capture
   // (not just the current viewport) so elements below the fold still crop
   // correctly; the real captured dimensions are read back via sharp rather
   // than assumed from the viewport, since a full-page capture is taller than
-  // the viewport whenever the page scrolls. Best-effort: if the browser/
-  // screenshot step fails, the finding is still persisted without a crop
-  // rather than losing the flag entirely.
+  // the viewport whenever the page scrolls. The same navigation also
+  // verifies hasText against the live DOM — never trust it from the client
+  // alone, since it decides the persisted WCAG criterion (1.4.3 vs 1.4.11).
+  // Both are best-effort: if the browser step fails, the finding is still
+  // persisted (without a crop, falling back to the client's hasText) rather
+  // than losing the flag entirely.
   let cropUrl: string | null = null;
+  let verifiedHasText = hasText === true;
   try {
     const vp = isViewport(viewport) ? viewport : { width: 1440, height: 900 };
 
-    const screenshot = await withPage(
+    const { screenshot, domHasText } = await withPage(
       async (page) => {
         await page.goto(parsedUrl.href, { waitUntil: "domcontentloaded", timeout: 15_000 });
-        return page.screenshot({ fullPage: true, animations: "disabled" });
+        const domHasText = await page
+          .evaluate((sel: string) => {
+            const el = document.querySelector(sel);
+            return !!el && (el.textContent || "").trim().length > 0;
+          }, selector)
+          .catch(() => null);
+        const screenshot = await page.screenshot({ fullPage: true, animations: "disabled" });
+        return { screenshot, domHasText };
       },
       { viewport: vp }
     );
+    if (domHasText !== null) verifiedHasText = domHasText;
 
     const metadata = await sharp(screenshot).metadata();
     const imgWidth = metadata.width || vp.width;
@@ -200,6 +197,16 @@ export async function POST(
   } catch {
     cropUrl = null;
   }
+
+  const computed = buildContrastFinding({
+    auditId,
+    pageId,
+    selector,
+    elementHtml: elementHtml ?? null,
+    fg,
+    bg,
+    hasText: verifiedHasText,
+  });
 
   try {
     await insertFindings([

@@ -1,12 +1,6 @@
 import { getAudit, getFindingsForAudit, createSignedUrl } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
-
-/** Best-effort client IP from Vercel/Next headers. */
-function getClientIp(request: Request): string | null {
-  const fwd = request.headers.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0].trim();
-  return request.headers.get("x-real-ip") ?? null;
-}
+import { getClientIp } from "@/lib/http";
 
 export async function GET(
   request: Request,
