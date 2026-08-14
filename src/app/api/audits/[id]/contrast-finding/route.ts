@@ -2,6 +2,7 @@ import sharp from "sharp";
 import { withPage } from "@/engine/browser";
 import { getAudit, getAuditPageId, insertFindings, uploadEvidence } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
+import { sanitizeUrl, validateHost } from "@/lib/ssrf";
 import { contrastRatio, contrastVerdict } from "@/lib/contrast";
 import { buildContrastFinding } from "@/lib/audit/contrast-finding";
 
@@ -53,29 +54,41 @@ export async function POST(
 ) {
   const { id: auditId } = await params;
 
-  let audit: Awaited<ReturnType<typeof getAudit>>;
+  // Fetch the audit up front — needed either way (existence check, and the
+  // anonymous-auth IP fallback below) — but its outcome must not leak to an
+  // unauthenticated caller as a distinguishable signal from "wrong IP" (see
+  // the auth block below), or an unauthenticated caller could enumerate
+  // valid audit ids by probing for 404 vs 401.
+  let audit: Awaited<ReturnType<typeof getAudit>> | null = null;
   try {
     audit = await getAudit(auditId);
   } catch {
-    return Response.json({ error: "Audit not found" }, { status: 404 });
-  }
-  if (!audit) {
-    return Response.json({ error: "Audit not found" }, { status: 404 });
+    audit = null;
   }
 
   // Same owner-scoped auth pattern as /api/audits/[id]/sr-preview: a valid
   // session, or an anonymous request whose IP matches the audit's creator IP
   // — Contrast Lab is reachable from the main (anonymous-friendly) workbench,
   // so it shouldn't hard-require sign-in the way the NVDA run route does.
+  // A missing audit and a wrong-IP audit get the SAME 401 here so an
+  // unauthenticated caller can't distinguish "doesn't exist" from "exists,
+  // not yours" by response code.
   const auth = await requireSession(request);
   if (!auth.ok) {
     const reqIp = getClientIp(request);
-    if (!reqIp || audit.created_ip !== reqIp) {
+    if (!audit || !reqIp || audit.created_ip !== reqIp) {
       return Response.json(
         { error: "Missing or invalid authorization header" },
         { status: 401 }
       );
     }
+  }
+
+  // Only a caller with a valid session (any session, not just this audit's
+  // owner) gets an accurate existence check — the anonymous path already
+  // returned above for a missing audit.
+  if (!audit) {
+    return Response.json({ error: "Audit not found" }, { status: 404 });
   }
 
   const body = (await request.json().catch(() => ({}))) as ContrastFindingBody;
@@ -108,9 +121,29 @@ export async function POST(
     );
   }
 
+  // SSRF guard: the page the browser is about to navigate to may be
+  // client-supplied (pageUrl) — validate it exactly like every other route
+  // that navigates a URL (preview-proxy, explore/ax-snapshot). This also
+  // closes off the disconnected demo-fixture route (pageUrl="/explore-demo.html",
+  // a relative path) rather than letting it fail silently deep inside a
+  // best-effort try/catch further down.
+  const resolvedPageUrl = pageUrl || audit.target_url;
+  const parsedUrl = sanitizeUrl(resolvedPageUrl);
+  if (!parsedUrl) {
+    return Response.json({ error: "Invalid or unsafe page URL" }, { status: 400 });
+  }
+  try {
+    await validateHost(parsedUrl.hostname);
+  } catch (e) {
+    return Response.json(
+      { error: `URL rejected: ${(e as Error).message}` },
+      { status: 400 }
+    );
+  }
+
   let pageId: string | null;
   try {
-    pageId = await getAuditPageId(auditId, pageUrl || audit.target_url);
+    pageId = await getAuditPageId(auditId, resolvedPageUrl);
   } catch {
     pageId = null;
   }
@@ -129,26 +162,33 @@ export async function POST(
   });
 
   // Re-navigate and crop a fresh evidence screenshot around the picked
-  // element, at the same viewport the user was looking at. Best-effort: if
-  // the browser/screenshot step fails, the finding is still persisted
-  // without a crop rather than losing the flag entirely.
+  // element, at the same viewport the user was looking at. fullPage capture
+  // (not just the current viewport) so elements below the fold still crop
+  // correctly; the real captured dimensions are read back via sharp rather
+  // than assumed from the viewport, since a full-page capture is taller than
+  // the viewport whenever the page scrolls. Best-effort: if the browser/
+  // screenshot step fails, the finding is still persisted without a crop
+  // rather than losing the flag entirely.
   let cropUrl: string | null = null;
   try {
     const vp = isViewport(viewport) ? viewport : { width: 1440, height: 900 };
-    const targetUrl = pageUrl || audit.target_url;
 
     const screenshot = await withPage(
       async (page) => {
-        await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 15_000 });
-        return page.screenshot({ animations: "disabled" });
+        await page.goto(parsedUrl.href, { waitUntil: "domcontentloaded", timeout: 15_000 });
+        return page.screenshot({ fullPage: true, animations: "disabled" });
       },
       { viewport: vp }
     );
 
-    const left = Math.min(Math.max(0, Math.round(bbox.x - 30)), vp.width - 1);
-    const top = Math.min(Math.max(0, Math.round(bbox.y - 30)), vp.height - 1);
-    const cropWidth = Math.max(1, Math.min(vp.width - left, Math.round(bbox.width + 60)));
-    const cropHeight = Math.max(1, Math.min(vp.height - top, Math.round(bbox.height + 60)));
+    const metadata = await sharp(screenshot).metadata();
+    const imgWidth = metadata.width || vp.width;
+    const imgHeight = metadata.height || vp.height;
+
+    const left = Math.min(Math.max(0, Math.round(bbox.x - 30)), imgWidth - 1);
+    const top = Math.min(Math.max(0, Math.round(bbox.y - 30)), imgHeight - 1);
+    const cropWidth = Math.max(1, Math.min(imgWidth - left, Math.round(bbox.width + 60)));
+    const cropHeight = Math.max(1, Math.min(imgHeight - top, Math.round(bbox.height + 60)));
 
     const cropped = await sharp(screenshot)
       .extract({ left, top, width: cropWidth, height: cropHeight })
