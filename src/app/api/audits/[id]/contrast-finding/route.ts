@@ -4,7 +4,7 @@ import { getAudit, getAuditPageId, insertFindings, uploadEvidence } from "@/lib/
 import { requireSession } from "@/lib/supabase/session";
 import { getClientIp } from "@/lib/http";
 import { sanitizeUrl, validateHost } from "@/lib/ssrf";
-import { contrastRatio, contrastVerdict } from "@/lib/contrast";
+import { contrastRatio, requiredContrastRatio } from "@/lib/contrast";
 import { buildContrastFinding } from "@/lib/audit/contrast-finding";
 
 export const runtime = "nodejs";
@@ -19,6 +19,15 @@ interface ContrastFindingBody {
   hasText?: boolean;
   bbox?: { x: number; y: number; width: number; height: number };
   viewport?: { width: number; height: number };
+  /** The AA/AAA + normal/large-text target the user had selected in
+   * Contrast Lab when they flagged this pair — defaults preserve the
+   * pre-selector AA/normal-text behavior for older callers. */
+  level?: "AA" | "AAA";
+  largeText?: boolean;
+}
+
+function isLevel(v: unknown): v is "AA" | "AAA" {
+  return v === "AA" || v === "AAA";
 }
 
 function isBbox(v: unknown): v is { x: number; y: number; width: number; height: number } {
@@ -88,6 +97,8 @@ export async function POST(
 
   const body = (await request.json().catch(() => ({}))) as ContrastFindingBody;
   const { selector, elementHtml, fg, bg, hasText, bbox, viewport, pageUrl } = body;
+  const level = isLevel(body.level) ? body.level : "AA";
+  const largeText = body.largeText === true;
 
   if (!selector || !fg || !bg || !bbox) {
     return Response.json(
@@ -99,19 +110,23 @@ export async function POST(
     return Response.json({ error: "bbox {x,y,width,height} is required" }, { status: 400 });
   }
 
-  // Server-computed ratio/verdict — never trust a client-posted number. Only
-  // an actual AA failure is eligible to become a finding; a passing pair is
-  // not a violation and this route refuses to fabricate one.
+  // Server-computed ratio — never trust a client-posted number. Only a pair
+  // that actually fails the caller's selected target (AA/AAA, normal/large
+  // text — the same target the Contrast Lab UI shows) is eligible to become
+  // a finding; a pair that passes that target is not a violation of it and
+  // this route refuses to fabricate one. Without this, an AAA-only failure
+  // (passes AA, fails AAA) could never be flagged regardless of what the
+  // user had selected in the UI.
   let ratio: number;
   try {
     ratio = contrastRatio(fg, bg);
   } catch {
     return Response.json({ error: "Unparseable fg/bg color" }, { status: 400 });
   }
-  const verdict = contrastVerdict(ratio);
-  if (verdict.passesAA) {
+  const requiredRatio = requiredContrastRatio(level, largeText);
+  if (ratio >= requiredRatio) {
     return Response.json(
-      { error: "This pair already passes AA — nothing to flag" },
+      { error: `This pair already passes ${level}${largeText ? " (large text)" : ""} — nothing to flag` },
       { status: 400 }
     );
   }
@@ -206,6 +221,8 @@ export async function POST(
     fg,
     bg,
     hasText: verifiedHasText,
+    level,
+    largeText,
   });
 
   try {

@@ -73,6 +73,8 @@ export function ContrastFix({
           hasText: element.hasText,
           bbox: element.bbox,
           viewport,
+          level,
+          largeText,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -172,7 +174,7 @@ export function ContrastFix({
         </div>
       )}
 
-      {auditId && !verdict.passesAA && (
+      {auditId && !meetsTarget && (
         <div className="border-t pt-3">
           <Button
             size="sm"
@@ -183,7 +185,7 @@ export function ContrastFix({
             {isFlagged ? "Flagged" : flagging ? "Flagging…" : "Flag finding"}
           </Button>
           <p className="text-[11px] text-muted-foreground mt-1">
-            Persists this AA failure into the report with crop evidence.
+            Persists this {level}{largeText ? " large-text" : ""} failure into the report with crop evidence.
           </p>
         </div>
       )}

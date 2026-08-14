@@ -122,6 +122,44 @@ describe("ContrastFix", () => {
     expect(screen.queryByText("Flag finding")).not.toBeInTheDocument();
   });
 
+  it("regression: an AAA-only failure (passes AA) hides Flag finding at the AA target but shows it once AAA is selected", () => {
+    // #767676 on white is ~4.54:1 — passes AA-normal (4.5) but fails
+    // AAA-normal (7.0). Before this fix, the button's visibility was gated
+    // on !verdict.passesAA (always AA), so it never appeared for this pair
+    // no matter what target the user had selected.
+    const aaaOnlyFailure: InspectedElement = {
+      ...failing,
+      computed: { color: "#767676", backgroundColor: "#ffffff" },
+    };
+    render(<ContrastFix element={aaaOnlyFailure} auditId="audit-1" onApply={() => {}} />);
+    expect(screen.queryByText("Flag finding")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("target-level-aaa"));
+
+    expect(screen.getByText("Flag finding")).toBeInTheDocument();
+  });
+
+  it("regression: Flag finding posts the selected level/largeText target", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({ ok: true }) })
+    );
+    const aaaOnlyFailure: InspectedElement = {
+      ...failing,
+      computed: { color: "#767676", backgroundColor: "#ffffff" },
+    };
+    render(<ContrastFix element={aaaOnlyFailure} auditId="audit-1" onApply={() => {}} />);
+    fireEvent.click(screen.getByTestId("target-level-aaa"));
+    fireEvent.click(screen.getByText("Flag finding"));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+
+    const [, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse(options.body as string);
+    expect(body.level).toBe("AAA");
+    expect(body.largeText).toBe(false);
+  });
+
   it("Flag finding posts to the contrast-finding route with hasText/pageUrl/viewport and shows a success toast", async () => {
     vi.stubGlobal(
       "fetch",

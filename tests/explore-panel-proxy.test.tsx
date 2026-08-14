@@ -21,4 +21,19 @@ describe("ExplorePanel — real-page inspection via the preview proxy", () => {
       "/api/preview-proxy?url=" + encodeURIComponent("https://example.com/page")
     );
   });
+
+  it("regression: a relative target (bundled demo fixture) is framed directly, not through the proxy", () => {
+    // /api/preview-proxy's `new URL(url)` call requires an absolute URL and
+    // 400s on a relative path — the demo fixture is already same-origin and
+    // needs no proxying at all.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ snapshot: null }) })
+    );
+
+    render(<ExplorePanel targetUrl="/explore-demo.html" auditId={null} />);
+
+    const iframe = screen.getByTitle("Explore preview");
+    expect(iframe).toHaveAttribute("src", "/explore-demo.html");
+  });
 });

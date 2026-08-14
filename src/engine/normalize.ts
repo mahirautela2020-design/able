@@ -43,7 +43,19 @@ function deduplicate(findings: Finding[]): Finding[] {
   });
 }
 
-export function computeComplianceMatrix(findings: Finding[]): ComplianceMatrix {
+/**
+ * @param testedScIds When provided, only these SC ids are eligible to fall
+ * back to "automated-pass" (an automatable SC with zero findings against
+ * it). SCs outside this set stay "manual" instead of being reported as
+ * passed — a module the user disabled never ran, so there's no basis to
+ * claim it passed. Omit to keep the pre-module-gating behavior (every
+ * automatable SC is eligible), used by callers that don't have a module
+ * selection to scope against.
+ */
+export function computeComplianceMatrix(
+  findings: Finding[],
+  testedScIds?: Iterable<string>
+): ComplianceMatrix {
   const registry = getWcagRegistry();
   const scMap = new Map<string, WcagScoreEntry>();
 
@@ -92,8 +104,10 @@ export function computeComplianceMatrix(findings: Finding[]): ComplianceMatrix {
     }
   }
 
+  const testedSet = testedScIds ? new Set(testedScIds) : null;
+
   for (const sc of registry) {
-    if (!sc.manualTest) {
+    if (!sc.manualTest && (!testedSet || testedSet.has(sc.id))) {
       scMap.set(sc.id, {
         ...scMap.get(sc.id)!,
         ...(scMap.get(sc.id)!.status === "manual"

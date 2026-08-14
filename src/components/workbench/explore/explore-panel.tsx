@@ -52,6 +52,16 @@ export function measureIframeViewport(
   return { width: Math.round(rect.width), height: Math.round(rect.height) };
 }
 
+// A relative path (the bundled demo fixture, e.g. "/explore-demo.html") is
+// already same-origin — framing it directly works with no XFO/CSP fight, and
+// routing it through /api/preview-proxy would 400 (the proxy's `new URL()`
+// call requires an absolute URL). Only an absolute http(s) URL — a real
+// audited page — needs the proxy's server-side fetch + bridge injection.
+function resolveIframeSrc(targetUrl: string): string {
+  if (targetUrl.startsWith("/")) return targetUrl;
+  return `/api/preview-proxy?url=${encodeURIComponent(targetUrl)}`;
+}
+
 export function ExplorePanel({ targetUrl, auditId }: ExplorePanelProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -222,7 +232,7 @@ export function ExplorePanel({ targetUrl, auditId }: ExplorePanelProps) {
       <div className="flex-1 relative min-w-0 bg-white">
         <iframe
           ref={iframeRef}
-          src={`/api/preview-proxy?url=${encodeURIComponent(targetUrl)}`}
+          src={resolveIframeSrc(targetUrl)}
           title="Explore preview"
           sandbox="allow-scripts allow-same-origin allow-forms"
           className={`w-full h-full border-0 ${pickerActive && !pickerDisabled ? "pointer-events-none" : ""}`}

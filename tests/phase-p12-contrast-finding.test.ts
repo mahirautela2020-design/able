@@ -143,6 +143,28 @@ describe("POST /api/audits/[id]/contrast-finding", () => {
     expect(insertFindings).toHaveBeenCalledTimes(1);
   });
 
+  it("regression: an AAA-only failure (passes AA, fails AAA) is rejected at the default AA target but accepted when the caller selects AAA", async () => {
+    // #636363 on white is ~6.01:1 — passes the 4.5:1 AA floor but misses the
+    // 7:1 AAA floor. Before this fix, the route's gate always checked AA
+    // regardless of what the caller sent, so this pair could never be
+    // flagged no matter what the UI had selected.
+    const aaaFailingBody = { ...failingBody, fg: "#636363", bg: "#ffffff" };
+
+    const atAa = await POST(makeRequest(aaaFailingBody), { params: Promise.resolve({ id: "audit-1" }) });
+    expect(atAa.status).toBe(400);
+    expect(insertFindings).not.toHaveBeenCalled();
+
+    const atAaa = await POST(
+      makeRequest({ ...aaaFailingBody, level: "AAA" }),
+      { params: Promise.resolve({ id: "audit-1" }) }
+    );
+    expect(atAaa.status).toBe(201);
+    const json = await atAaa.json();
+    expect(json.criterion).toBe("1.4.6");
+    expect(insertFindings).toHaveBeenCalledTimes(1);
+    expect(insertFindings.mock.calls[0][0][0].wcag_level).toBe("AAA");
+  });
+
   it("picks 1.4.3 when hasText is true, 1.4.11 when false — server-verified against the live DOM, agreeing with the client here", async () => {
     fakePage.evaluate.mockResolvedValueOnce(true);
     await POST(makeRequest(failingBody), { params: Promise.resolve({ id: "audit-1" }) });

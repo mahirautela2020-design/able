@@ -11,7 +11,7 @@ import { captureAxTree } from "@/engine/ax-tree";
 import { runAxChecks } from "@/engine/ax-checks";
 import { axTreeToTranscript } from "@/engine/sr-speech";
 import { scanResponsive } from "@/engine/responsive-scan";
-import { resolveModuleIds, resolveModuleGates } from "@/lib/audit-modules";
+import { resolveModuleIds, resolveModuleGates, getModuleWcagCoverage } from "@/lib/audit-modules";
 import {
   updateAuditStatus,
   updateAuditProgress,
@@ -79,6 +79,7 @@ export const auditUrl = inngest.createFunction(
     // this phase: the "standard" preset's steps all run.
     const moduleIds = resolveModuleIds(modules);
     const gates = resolveModuleGates(moduleIds);
+    const coveredScIds = getModuleWcagCoverage(moduleIds);
 
     await step.run("crawl", async () => {
       await updateAuditStatus(auditId, "running");
@@ -331,7 +332,7 @@ export const auditUrl = inngest.createFunction(
 
           await insertFindings(findingRows);
 
-          const matrix = computeComplianceMatrix(allFindingsForPage);
+          const matrix = computeComplianceMatrix(allFindingsForPage, coveredScIds);
 
           return {
             pageId,

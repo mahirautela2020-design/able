@@ -2,12 +2,20 @@ import { describe, it, expect } from "vitest";
 import { buildContrastFinding, pickContrastCriterion } from "@/lib/audit/contrast-finding";
 
 describe("pickContrastCriterion", () => {
-  it("picks 1.4.3 when the element has visible text", () => {
+  it("picks 1.4.3 when the element has visible text (default AA level)", () => {
     expect(pickContrastCriterion(true)).toBe("1.4.3");
   });
 
   it("picks 1.4.11 when the element has no visible text (icon/UI component)", () => {
     expect(pickContrastCriterion(false)).toBe("1.4.11");
+  });
+
+  it("regression: picks 1.4.6 (Contrast Enhanced) for text at the AAA target", () => {
+    expect(pickContrastCriterion(true, "AAA")).toBe("1.4.6");
+  });
+
+  it("regression: non-text stays 1.4.11 even at the AAA target (WCAG defines no AAA tier for it)", () => {
+    expect(pickContrastCriterion(false, "AAA")).toBe("1.4.11");
   });
 });
 
@@ -50,6 +58,39 @@ describe("buildContrastFinding — pure, server-side-only computation", () => {
       bg: "#ffffff",
       ratio: result.ratio,
       apcaLc: result.apcaLc,
+      target: { level: "AA", largeText: false },
+      passesAA: false,
+      passesAAA: false,
+    });
+  });
+
+  it("regression: an AAA-only failure (passes AA, fails AAA) is recorded against 1.4.6, not 1.4.3", () => {
+    // #636363 on white is ~6.01:1 — clears the 4.5:1 AA floor but misses the
+    // 7:1 AAA "Contrast Enhanced" floor. Before this fix, the route never
+    // even reached buildContrastFinding for this pair because its own
+    // passesAA gate rejected it outright regardless of which target the
+    // user had picked in the UI.
+    const result = buildContrastFinding({
+      auditId: "audit-1",
+      pageId: "page-1",
+      selector: "#cta",
+      elementHtml: null,
+      fg: "#636363",
+      bg: "#ffffff",
+      hasText: true,
+      level: "AAA",
+      largeText: false,
+    });
+
+    expect(result.ratio).toBeGreaterThanOrEqual(4.5);
+    expect(result.ratio).toBeLessThan(7.0);
+    expect(result.criterion).toBe("1.4.6");
+    expect(result.row.wcag_criteria).toEqual(["wcag146"]);
+    expect(result.row.wcag_level).toBe("AAA");
+    expect(result.row.evidence).toMatchObject({
+      target: { level: "AAA", largeText: false },
+      passesAA: true,
+      passesAAA: false,
     });
   });
 
