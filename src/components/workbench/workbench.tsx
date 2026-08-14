@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getWcagRegistry, type WcagSuccessCriterion } from "@/engine/wcag-registry";
 import { supabase, authHeaders } from "@/lib/supabase/client";
-import { ExplorePanel } from "@/components/workbench/explore/explore-panel";
 
 export interface WorkbenchFinding {
   id: string;
@@ -31,30 +30,12 @@ interface WorkbenchProps {
   findings: WorkbenchFinding[];
 }
 
-export const PRINCIPLES = [
-  { key: "1", label: "1. Perceivable", principleName: "Perceivable" },
-  { key: "2", label: "2. Operable", principleName: "Operable" },
-  { key: "3", label: "3. Understandable", principleName: "Understandable" },
-  { key: "4", label: "4. Robust", principleName: "Robust" },
+const PRINCIPLES = [
+  { key: "1", label: "1. Perceivable" },
+  { key: "2", label: "2. Operable" },
+  { key: "3", label: "3. Understandable" },
+  { key: "4", label: "4. Robust" },
 ] as const;
-
-type LevelFilter = "ALL" | "A" | "AA" | "AAA";
-
-// wcag-registry.ts stores `principle` as the full word (e.g. "Perceivable"),
-// while the checklist tabs key off the numeric PRINCIPLES id — map through
-// principleName rather than comparing the two directly.
-export function filterScsByPrinciple<T extends { sc: WcagSuccessCriterion }>(
-  scList: T[],
-  principleKey: string,
-  levelFilter: LevelFilter
-): T[] {
-  const principleName = PRINCIPLES.find((p) => p.key === principleKey)?.principleName;
-  return scList.filter((s) => {
-    if (s.sc.principle !== principleName) return false;
-    if (levelFilter !== "ALL" && s.sc.level !== levelFilter) return false;
-    return true;
-  });
-}
 
 const SEVERITY_DOT: Record<string, string> = {
   critical: "bg-red-500",
@@ -77,7 +58,6 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [levelFilter, setLevelFilter] = useState<"ALL" | "A" | "AA" | "AAA">("ALL");
   const [previewKey, setPreviewKey] = useState(0); // reload iframe
   const [frameBlocked, setFrameBlocked] = useState(false);
-  const [rightMode, setRightMode] = useState<"preview" | "explore">("preview");
   const [showScreenshot, setShowScreenshot] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [editingUrl, setEditingUrl] = useState(false);
@@ -181,7 +161,11 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
     return rows;
   }, [liveFindings, registry]);
 
-  const principleScs = filterScsByPrinciple(scList, activePrinciple, levelFilter);
+  const principleScs = scList.filter((s) => {
+    if (s.sc.principle !== activePrinciple) return false;
+    if (levelFilter !== "ALL" && s.sc.level !== levelFilter) return false;
+    return true;
+  });
 
   const activeFindings = activeSc ? bySc.get(activeSc) || [] : [];
 
@@ -526,17 +510,6 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
             >
               Reload preview
             </button>
-            <button
-              onClick={() => setRightMode((m) => (m === "explore" ? "preview" : "explore"))}
-              className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
-                rightMode === "explore"
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-accent/50"
-              }`}
-              title="Click-to-inspect contrast, APCA, CVD simulation, nearest-fix suggestions"
-            >
-              {rightMode === "explore" ? "Preview" : "Contrast Lab"}
-            </button>
             {/* Re-run always available (esp. after a failure) */}
             <button
               onClick={() => handleRerun()}
@@ -558,7 +531,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
         </div>
 
         {/* Preview-blocked prompt: audit continues without preview */}
-        {frameBlocked && rightMode !== "explore" && (
+        {frameBlocked && (
           <div className="flex items-center justify-between gap-3 px-3 py-2 border-b bg-amber-50 dark:bg-amber-950/40 text-xs">
             <p className="text-amber-800 dark:text-amber-300 min-w-0">
               <span className="font-medium">{targetUrl}</span> blocks embedding — the
@@ -583,12 +556,6 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           </div>
         )}
 
-        {rightMode === "explore" ? (
-          <div className="flex-1 min-h-0 bg-white">
-            <ExplorePanel targetUrl={targetUrl} auditId={auditId} />
-          </div>
-        ) : (
-        <>
         {/* Preview: sandboxed live iframe. For sites that block embedding
             (X-Frame-Options/CSP), we PROXY the page through our own origin
             (/api/preview-proxy) — the iframe sees OUR headers, so the
@@ -661,8 +628,6 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
             </div>
           )}
         </div>
-        </>
-        )}
 
         {/* Findings drawer for selected SC */}
         {activeSc && (

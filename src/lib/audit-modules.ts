@@ -187,39 +187,3 @@ export function formatRuntime(ms: number): string {
 export function getRequiredModuleIds(): string[] {
   return AUDIT_MODULES.filter((m) => !m.optional).map((m) => m.id);
 }
-
-/**
- * The URL-scan pipeline's default when a caller (older client, MCP, a
- * future integration) doesn't send a `modules` selection at all — the
- * "standard" preset, so pre-existing callers keep today's behavior instead
- * of silently losing coverage.
- */
-export function resolveModuleIds(requested?: string[] | null): string[] {
-  if (requested && requested.length > 0) return requested;
-  const preset = getPresetById("standard");
-  const required = getRequiredModuleIds();
-  return Array.from(new Set([...(preset?.moduleIds ?? []), ...required]));
-}
-
-export interface ResolvedModuleGates {
-  /** Playwright Tab-walkthrough (focus traps, order, focus styles). */
-  keyboard: boolean;
-  /** P11 AX-tree capture + deterministic checks + SR snapshot/announcements. */
-  axTree: boolean;
-  /** Multi-viewport reflow re-scan (WCAG 1.4.10). */
-  responsive: boolean;
-}
-
-/** Translate an enabled-module-id list into which optional pipeline steps
- * should run. "automated"/"needs-review" (axe-core, always required) and
- * baseline touch-target/contrast coverage (axe-core's own target-size and
- * color-contrast rules) are unconditional regardless of selection — this
- * only gates the steps that are genuinely skippable. */
-export function resolveModuleGates(moduleIds: string[]): ResolvedModuleGates {
-  const set = new Set(moduleIds);
-  return {
-    keyboard: set.has("keyboard"),
-    axTree: set.has("aria") || set.has("screen-reader"),
-    responsive: set.has("responsive"),
-  };
-}

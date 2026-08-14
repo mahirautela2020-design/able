@@ -46,22 +46,7 @@ interface CdpAxNode {
   backendDOMNodeId?: number;
 }
 
-/** Minimal shape of a Playwright CDPSession — narrowed so this module and
- * its tests don't depend on playwright-core's internal CDP session type. */
-export interface CdpSessionLike {
-  send(method: string, params?: Record<string, unknown>): Promise<unknown>;
-}
-
-interface DescribeNodeResult {
-  node?: { localName?: string };
-}
-
-interface BoxModelResult {
-  model?: { content?: number[]; width?: number; height?: number };
-}
-
 const AX_TREE_TIMEOUT = 15_000;
-const PER_NODE_ENRICH_TIMEOUT = 2_000;
 
 /**
  * Capture the full AX tree from a page and normalize to a flat node list.
@@ -90,67 +75,10 @@ async function captureRaw(page: Page): Promise<AxFlatNode[]> {
     const nodes = tree.nodes ?? [];
     if (nodes.length === 0) return [];
 
-    return await flattenNodes(nodes, session);
+    return flattenNodes(nodes);
   } finally {
     await session.detach().catch(() => {});
   }
-}
-
-/** Race a per-node CDP lookup against a short deadline so one slow/unresolvable
- * backendNodeId can't stall the whole page's capture. */
-async function withNodeTimeout<T>(promise: Promise<T>): Promise<T | undefined> {
-  return Promise.race([
-    promise,
-    new Promise<undefined>((resolve) =>
-      setTimeout(() => resolve(undefined), PER_NODE_ENRICH_TIMEOUT)
-    ),
-  ]);
-}
-
-/** Resolve the real DOM tag name + layout rect for one AX node via CDP,
- * using the backendDOMNodeId the accessibility tree already carries.
- * Best-effort: any failure (detached node, pseudo-element, etc.) just
- * leaves rect/domTag null rather than failing the whole capture. */
-async function enrichNode(
-  session: CdpSessionLike,
-  backendNodeId: number
-): Promise<{ rect: AxFlatNode["rect"]; domTag: string | null }> {
-  let domTag: string | null = null;
-  let rect: AxFlatNode["rect"] = null;
-
-  try {
-    const described = await withNodeTimeout(
-      session.send("DOM.describeNode", { backendNodeId }) as Promise<DescribeNodeResult>
-    );
-    const localName = described?.node?.localName;
-    if (localName) domTag = localName.toLowerCase();
-  } catch {
-    // best-effort
-  }
-
-  try {
-    const boxed = await withNodeTimeout(
-      session.send("DOM.getBoxModel", { backendNodeId }) as Promise<BoxModelResult>
-    );
-    const model = boxed?.model;
-    if (
-      model?.content &&
-      model.content.length >= 2 &&
-      typeof model.width === "number" &&
-      typeof model.height === "number"
-    ) {
-      rect = {
-        x: model.content[0],
-        y: model.content[1],
-        width: model.width,
-        height: model.height,
-      };
-    }
-  } catch {
-    // best-effort
-  }
-
-  return { rect, domTag };
 }
 
 function str(v: CdpAxValue | undefined): string {
@@ -169,12 +97,8 @@ function boolProp(node: CdpAxNode, name: string): boolean | null {
   return v.value === true || v.value === "true";
 }
 
-async function flattenNodes(
-  cdpNodes: CdpAxNode[],
-  session: CdpSessionLike
-): Promise<AxFlatNode[]> {
+function flattenNodes(cdpNodes: CdpAxNode[]): AxFlatNode[] {
   const flat: AxFlatNode[] = [];
-  const backendNodeIds: (number | undefined)[] = [];
 
   for (const node of cdpNodes) {
     if (node.ignored) continue;
@@ -211,31 +135,11 @@ async function flattenNodes(
       disabled,
       expanded,
       isVisible,
-      rect: null,
+      rect: null, // CDP AX tree doesn't include layout; could be enriched later
       focusable,
       domTag: null,
     });
-    backendNodeIds.push(node.backendDOMNodeId);
   }
-
-  // Enrich rect/domTag via CDP for nodes actually worth checking — bound
-  // the round-trip cost by skipping invisible/nameless/non-focusable nodes,
-  // which the downstream checks (role-mismatch, reading-order, duplicate
-  // names) never look at anyway.
-  const enrichTasks: Promise<void>[] = [];
-  for (let i = 0; i < flat.length; i++) {
-    const n = flat[i];
-    const backendNodeId = backendNodeIds[i];
-    if (backendNodeId == null || !n.isVisible || !(n.name || n.focusable)) continue;
-
-    enrichTasks.push(
-      enrichNode(session, backendNodeId).then(({ rect, domTag }) => {
-        n.rect = rect;
-        n.domTag = domTag;
-      })
-    );
-  }
-  await Promise.all(enrichTasks);
 
   return flat;
 }

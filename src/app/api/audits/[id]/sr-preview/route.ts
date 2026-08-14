@@ -1,7 +1,12 @@
 import { getAudit } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
-import { getClientIp } from "@/lib/http";
 import { createClient } from "@supabase/supabase-js";
+
+function getClientIp(request: Request): string | null {
+  const fwd = request.headers.get("x-forwarded-for");
+  if (fwd) return fwd.split(",")[0].trim();
+  return request.headers.get("x-real-ip") ?? null;
+}
 
 export async function GET(
   request: Request,
