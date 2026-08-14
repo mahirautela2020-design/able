@@ -22,9 +22,22 @@ export function deriveRuleMappings(): Map<string, string[]> {
   const axe = require("axe-core");
   const mapping = new Map<string, string[]>();
 
-  const rules: Array<{ ruleId: string; tags: string[] }> = axe.getRules(
-    ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"]
-  );
+  // Must match axe-scan.ts's AXE_RUN_TAGS (minus "best-practice", which
+  // isn't a WCAG-level tag) — omitting the *aaa tags here would silently
+  // drop AAA-only rules (color-contrast-enhanced, identical-links-same-purpose,
+  // meta-refresh-no-exceptions) from axe.getRules()'s result entirely, so
+  // their violations could never resolve to a WCAG SC id.
+  const rules: Array<{ ruleId: string; tags: string[] }> = axe.getRules([
+    "wcag2a",
+    "wcag2aa",
+    "wcag2aaa",
+    "wcag21a",
+    "wcag21aa",
+    "wcag21aaa",
+    "wcag22aa",
+    "wcag22aaa",
+    "best-practice",
+  ]);
 
   const registryIds = new Set(WCAG_REGISTRY.map((sc) => sc.id));
 
@@ -46,7 +59,24 @@ export function deriveRuleMappings(): Map<string, string[]> {
   return mapping;
 }
 
-function normalizeTag(tag: string): string {
+/** Every SC id that at least one enabled axe-core rule can actually detect —
+ * i.e. the real, current coverage of the "automated" module, as opposed to
+ * `allAutomatableScIds()` (every SC the registry merely marks non-manual,
+ * regardless of whether any rule tests it). Used to keep the compliance
+ * matrix's "was this SC actually tested" set honest. */
+export function axeCoveredScIds(): string[] {
+  const ids = new Set<string>();
+  for (const scIds of deriveRuleMappings().values()) {
+    for (const id of scIds) ids.add(id);
+  }
+  return Array.from(ids).sort();
+}
+
+/** Normalizes an axe-core-style tag ("wcag143") to the registry's dotted SC
+ * id format ("1.4.3"). Already-dotted input (or a non-SC tag like a level
+ * tag "wcag2aa") passes through unchanged — safe to call on any tag string
+ * without knowing its source convention first. */
+export function normalizeTag(tag: string): string {
   const match = tag.match(/^wcag(\d)(\d)(\d+)$/);
   if (match) {
     return `${match[1]}.${match[2]}.${match[3]}`;

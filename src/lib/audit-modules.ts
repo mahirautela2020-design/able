@@ -1,4 +1,4 @@
-import { getWcagRegistry } from "@/engine/wcag-registry";
+import { getWcagRegistry, axeCoveredScIds } from "@/engine/wcag-registry";
 
 export interface AuditModule {
   id: string;
@@ -24,9 +24,12 @@ export interface ModuleSelection {
 
 const WCAG_REGISTRY = getWcagRegistry();
 
-function allAutomatableScIds(): string[] {
-  return WCAG_REGISTRY.filter((sc) => !sc.manualTest).map((sc) => sc.id);
-}
+// The SCs axe-core's own rules actually detect, not "every SC the registry
+// merely marks non-manual" — the two used to be conflated here, which made
+// module-gating a no-op: since "automated"/"needs-review" are always
+// enabled (required), their wcagScIds effectively became testedScIds's
+// floor regardless of which optional module a user toggled off.
+const AXE_COVERED_SC_IDS = axeCoveredScIds();
 
 export const AUDIT_MODULES: AuditModule[] = [
   {
@@ -34,7 +37,7 @@ export const AUDIT_MODULES: AuditModule[] = [
     name: "Automated A/AA/AAA",
     description: "Runs axe-core 4.13 on every page. Covers all automatable WCAG 2.2 success criteria across levels A, AA, and AAA.",
     engine: "axe-core 4.13",
-    wcagScIds: allAutomatableScIds(),
+    wcagScIds: AXE_COVERED_SC_IDS,
     estimatedRuntimeMs: 30_000,
     optional: false,
   },
@@ -43,7 +46,7 @@ export const AUDIT_MODULES: AuditModule[] = [
     name: "Needs Review",
     description: "Surfaces axe-core incomplete results that require human judgment — false positives, complex widgets, and ambiguous markup.",
     engine: "axe incomplete",
-    wcagScIds: allAutomatableScIds(),
+    wcagScIds: AXE_COVERED_SC_IDS,
     estimatedRuntimeMs: 0,
     optional: false,
   },
@@ -193,11 +196,20 @@ export function getRequiredModuleIds(): string[] {
  * future integration) doesn't send a `modules` selection at all — the
  * "standard" preset, so pre-existing callers keep today's behavior instead
  * of silently losing coverage.
+ *
+ * Required modules ("automated"/"needs-review") are re-added even when the
+ * caller DOES supply an explicit list: a direct API caller that sends e.g.
+ * `modules: ["contrast"]` (bypassing the UI's ModuleSelector, which already
+ * prevents unchecking them) must not silently exclude them from
+ * testedScIds — axe always runs regardless of selection, so the compliance
+ * matrix would otherwise report real, tested passes as "manual".
  */
 export function resolveModuleIds(requested?: string[] | null): string[] {
-  if (requested && requested.length > 0) return requested;
-  const preset = getPresetById("standard");
   const required = getRequiredModuleIds();
+  if (requested && requested.length > 0) {
+    return Array.from(new Set([...requested, ...required]));
+  }
+  const preset = getPresetById("standard");
   return Array.from(new Set([...(preset?.moduleIds ?? []), ...required]));
 }
 

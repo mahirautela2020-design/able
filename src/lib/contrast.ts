@@ -20,15 +20,25 @@ const AA_NORMAL = 4.5;
 const AA_LARGE = 3.0;
 const AAA_NORMAL = 7.0;
 const AAA_LARGE = 4.5;
+const NON_TEXT_MINIMUM = 3.0;
 
 /** The WCAG-required ratio for a given level + text size — the four
  * constants above, exposed so callers (e.g. the Contrast Lab's AA/AAA +
  * normal/large target selector) don't have to duplicate the threshold
- * table. */
+ * table.
+ *
+ * `hasText` defaults to true (the common case: 1.4.3/1.4.6 text contrast).
+ * WCAG 1.4.11 (non-text/UI-component contrast) has a single flat 3:1
+ * requirement with no AA/AAA tier and no large-text variant — passing
+ * `hasText: false` returns that flat floor regardless of `level`/`largeText`,
+ * so a non-text element isn't held to the stricter text thresholds (which
+ * would report a real 1.4.11 pass as a fabricated failure). */
 export function requiredContrastRatio(
   level: "AA" | "AAA",
-  largeText: boolean
+  largeText: boolean,
+  hasText = true
 ): number {
+  if (!hasText) return NON_TEXT_MINIMUM;
   if (level === "AAA") return largeText ? AAA_LARGE : AAA_NORMAL;
   return largeText ? AA_LARGE : AA_NORMAL;
 }

@@ -6,6 +6,7 @@ import { getClientIp } from "@/lib/http";
 import { sanitizeUrl, validateHost } from "@/lib/ssrf";
 import { contrastRatio, requiredContrastRatio } from "@/lib/contrast";
 import { buildContrastFinding } from "@/lib/audit/contrast-finding";
+import type { Bbox } from "@/lib/explore/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -17,7 +18,7 @@ interface ContrastFindingBody {
   fg?: string;
   bg?: string;
   hasText?: boolean;
-  bbox?: { x: number; y: number; width: number; height: number };
+  bbox?: Bbox;
   viewport?: { width: number; height: number };
   /** The AA/AAA + normal/large-text target the user had selected in
    * Contrast Lab when they flagged this pair — defaults preserve the
@@ -30,7 +31,7 @@ function isLevel(v: unknown): v is "AA" | "AAA" {
   return v === "AA" || v === "AAA";
 }
 
-function isBbox(v: unknown): v is { x: number; y: number; width: number; height: number } {
+function isBbox(v: unknown): v is Bbox {
   if (!v || typeof v !== "object") return false;
   const b = v as Record<string, unknown>;
   return (
@@ -70,29 +71,36 @@ export async function POST(
     audit = null;
   }
 
-  // Same owner-scoped auth pattern as /api/audits/[id]/sr-preview: a valid
-  // session, or an anonymous request whose IP matches the audit's creator IP
-  // — Contrast Lab is reachable from the main (anonymous-friendly) workbench,
-  // so it shouldn't hard-require sign-in the way the NVDA run route does.
-  // A missing audit and a wrong-IP audit get the SAME 401 here so an
-  // unauthenticated caller can't distinguish "doesn't exist" from "exists,
-  // not yours" by response code.
-  const auth = await requireSession(request);
-  if (!auth.ok) {
-    const reqIp = getClientIp(request);
-    if (!audit || !reqIp || audit.created_ip !== reqIp) {
-      return Response.json(
-        { error: "Missing or invalid authorization header" },
-        { status: 401 }
-      );
-    }
+  // Owner-scoped auth: a session belonging to the audit's owner, or an
+  // anonymous request whose IP matches the audit's creator IP — Contrast Lab
+  // is reachable from the main (anonymous-friendly) workbench, so it
+  // shouldn't hard-require sign-in the way the NVDA run route does. This is
+  // a WRITE endpoint (unlike the read-only report/sr-preview routes it
+  // otherwise mirrors), so a valid session alone is not enough: it must
+  // belong to THIS audit's owner, or any authenticated caller could attach
+  // fabricated findings to another user's audit just by knowing its id. A
+  // missing audit and a not-yours audit get the SAME 401 here so a caller
+  // can't distinguish "doesn't exist" from "exists, not yours" by response
+  // code.
+  if (!audit) {
+    return Response.json(
+      { error: "Missing or invalid authorization header" },
+      { status: 401 }
+    );
   }
 
-  // Only a caller with a valid session (any session, not just this audit's
-  // owner) gets an accurate existence check — the anonymous path already
-  // returned above for a missing audit.
-  if (!audit) {
-    return Response.json({ error: "Audit not found" }, { status: 404 });
+  const auth = await requireSession(request);
+  const reqIp = getClientIp(request);
+  const isOwner = auth.ok
+    ? audit.created_by
+      ? audit.created_by === auth.userId
+      : !!reqIp && audit.created_ip === reqIp
+    : !!reqIp && audit.created_ip === reqIp;
+  if (!isOwner) {
+    return Response.json(
+      { error: "Missing or invalid authorization header" },
+      { status: 401 }
+    );
   }
 
   const body = (await request.json().catch(() => ({}))) as ContrastFindingBody;
@@ -123,7 +131,12 @@ export async function POST(
   } catch {
     return Response.json({ error: "Unparseable fg/bg color" }, { status: 400 });
   }
-  const requiredRatio = requiredContrastRatio(level, largeText);
+  // hasText is client-reported at this point (server verification happens
+  // during the withPage capture below, right before buildContrastFinding) —
+  // fine for an early reject gate: it can only cause a false-negative 400
+  // if the client mis-reports it, never a fabricated finding, since the
+  // eventual persisted row is always built from the DOM-verified value.
+  const requiredRatio = requiredContrastRatio(level, largeText, hasText !== false);
   if (ratio >= requiredRatio) {
     return Response.json(
       { error: `This pair already passes ${level}${largeText ? " (large text)" : ""} — nothing to flag` },

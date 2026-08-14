@@ -48,9 +48,15 @@ describe("audit-modules", () => {
     expect(getModuleById("nonexistent")).toBeUndefined();
   });
 
-  it("automated module covers all non-manual SCs", () => {
+  it("automated module covers what axe-core rules actually detect (not every non-manual SC)", () => {
+    // Regression: this used to be allAutomatableScIds() — every SC the
+    // registry merely marks non-manual, regardless of whether any axe rule
+    // tests it — which made module-gating a no-op (this required module's
+    // over-claim always dominated testedScIds). It's now axeCoveredScIds(),
+    // axe's real, narrower rule coverage.
     const automated = getModuleById("automated")!;
-    expect(automated.wcagScIds.length).toBeGreaterThan(30);
+    expect(automated.wcagScIds.length).toBeGreaterThan(10);
+    expect(automated.wcagScIds.length).toBeLessThan(40);
     expect(automated.wcagScIds).toContain("1.3.1");
     expect(automated.wcagScIds).toContain("1.4.3");
     expect(automated.wcagScIds).toContain("4.1.2");
@@ -144,9 +150,20 @@ describe("audit-modules", () => {
     expect(getPresetById("super")).toBeUndefined();
   });
 
+  it("regression: disabling the keyboard module actually narrows coverage (module-gating was a no-op before)", () => {
+    // 2.4.7 (Focus Visible) has no axe-core rule — it's keyboard-module-only
+    // coverage. Before the fix, "automated" claimed every non-manual SC
+    // (including 2.4.7) regardless of which optional module ran, so this
+    // set was identical with or without "keyboard".
+    const withoutKeyboard = getModuleWcagCoverage(["automated", "needs-review"]);
+    const withKeyboard = getModuleWcagCoverage(["automated", "needs-review", "keyboard"]);
+    expect(withoutKeyboard).not.toContain("2.4.7");
+    expect(withKeyboard).toContain("2.4.7");
+  });
+
   it("getModuleWcagCoverage returns sorted unique SC ids", () => {
     const coverage = getModuleWcagCoverage(["automated", "keyboard"]);
-    expect(coverage.length).toBeGreaterThan(30);
+    expect(coverage.length).toBeGreaterThan(15);
     expect(coverage[0] <= coverage[coverage.length - 1]).toBe(true);
   });
 
@@ -247,6 +264,19 @@ describe("audit-modules", () => {
         "automated",
         "needs-review",
       ]);
+    });
+
+    it("regression: re-adds required modules when an explicit list omits them", () => {
+      // A direct API caller (bypassing the UI's ModuleSelector, which
+      // already prevents unchecking required modules) sending
+      // modules: ["contrast"] must not silently exclude "automated"/
+      // "needs-review" from testedScIds — axe always runs regardless of
+      // selection, so SCs it genuinely tested and passed would otherwise be
+      // reported "manual" instead of "automated-pass".
+      const ids = resolveModuleIds(["contrast"]);
+      expect(ids).toContain("contrast");
+      expect(ids).toContain("automated");
+      expect(ids).toContain("needs-review");
     });
 
     it("falls back to the standard preset (+ required modules) when absent", () => {

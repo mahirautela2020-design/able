@@ -1,5 +1,5 @@
 import type { Finding } from "@/engine/axe-scan";
-import { getWcagRegistry } from "@/engine/wcag-registry";
+import { getWcagRegistry, normalizeTag } from "@/engine/wcag-registry";
 
 export interface WcagScoreEntry {
   id: string;
@@ -74,8 +74,16 @@ export function computeComplianceMatrix(
   const failMap = new Map<string, string[]>();
   const reviewMap = new Map<string, string[]>();
 
+  // Producers disagree on wcag_criteria's tag convention — axe-scan.ts now
+  // stores dotted registry ids, but several producers (contrast-lab,
+  // responsive-scan, sr-speech, ax-checks) still store raw axe-style tags
+  // ("wcag143"). normalizeTag() is idempotent on already-dotted input, so
+  // normalizing every entry here matches both conventions without requiring
+  // every producer to agree on one — a level-only tag ("wcag2aa") simply
+  // fails to match any registry id and is harmlessly skipped.
   for (const f of findings) {
-    for (const sc of f.wcag_criteria) {
+    for (const rawSc of f.wcag_criteria) {
+      const sc = normalizeTag(rawSc);
       if (f.bucket === "automated") {
         const existing = failMap.get(sc) || [];
         existing.push(f.rule_id);

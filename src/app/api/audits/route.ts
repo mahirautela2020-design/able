@@ -103,8 +103,6 @@ export async function GET(request: Request) {
   }
 }
 
-/** Best-effort client IP from Vercel/Next headers. */
-
 export async function DELETE(request: Request) {
   // Destructive but owner-scoped: signed-in users delete their own audits;
   // anonymous users may delete audits their IP created (the same rule the

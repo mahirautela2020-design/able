@@ -84,7 +84,7 @@ export function buildContrastFinding(input: ContrastFindingInput): ContrastFindi
   const apcaLc = apcaContrast(input.fg, input.bg);
   const criterion = pickContrastCriterion(input.hasText, level);
   const severity = severityFromRatio(ratio);
-  const required = requiredContrastRatio(level, largeText);
+  const required = requiredContrastRatio(level, largeText, input.hasText);
 
   const failureSummary =
     criterion === "1.4.11"

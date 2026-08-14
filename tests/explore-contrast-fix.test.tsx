@@ -122,6 +122,40 @@ describe("ContrastFix", () => {
     expect(screen.queryByText("Flag finding")).not.toBeInTheDocument();
   });
 
+  it("regression: a non-text element that passes the real 3:1 floor is NOT reported as failing at the default AA/normal-text target", () => {
+    // #888888 on white is ~3.54:1 — genuinely passes WCAG 1.4.11's flat 3:1
+    // floor, but fails the 4.5:1 AA-normal TEXT floor. Before this fix,
+    // requiredContrastRatio ignored hasText, so a non-text element was held
+    // to the text threshold and reported a real pass as a failure.
+    const nonText: InspectedElement = {
+      ...failing,
+      computed: { color: "#888888", backgroundColor: "#ffffff" },
+      hasText: false,
+    };
+    render(<ContrastFix element={nonText} auditId="audit-1" onApply={() => {}} />);
+    expect(screen.getByTestId("contrast-verdict")).toHaveTextContent("passes");
+    expect(screen.queryByText(/Suggested fix/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Flag finding")).not.toBeInTheDocument();
+  });
+
+  it("regression: the AA/AAA + text-size selector is hidden for non-text elements (1.4.11 has no tiers)", () => {
+    const nonText: InspectedElement = { ...failing, hasText: false };
+    render(<ContrastFix element={nonText} auditId="audit-1" onApply={() => {}} />);
+    expect(screen.queryByTestId("target-level-aa")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("target-level-aaa")).not.toBeInTheDocument();
+    expect(screen.getByTestId("non-text-target-note")).toBeInTheDocument();
+  });
+
+  it("regression: the criterion chip reflects the actual selected target (1.4.6 at AAA, not a static 1.4.3/1.4.11 pair)", () => {
+    render(<ContrastFix element={failing} auditId="audit-1" onApply={() => {}} />);
+    expect(screen.getByText("1.4.3")).toBeInTheDocument();
+    expect(screen.queryByText("1.4.11")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("target-level-aaa"));
+    expect(screen.getByText("1.4.6")).toBeInTheDocument();
+    expect(screen.queryByText("1.4.3")).not.toBeInTheDocument();
+  });
+
   it("regression: an AAA-only failure (passes AA) hides Flag finding at the AA target but shows it once AAA is selected", () => {
     // #767676 on white is ~4.54:1 — passes AA-normal (4.5) but fails
     // AAA-normal (7.0). Before this fix, the button's visibility was gated

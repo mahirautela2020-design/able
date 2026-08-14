@@ -9,19 +9,32 @@ const { requireSession } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/supabase/session", () => ({ requireSession }));
 
+interface AuditRow {
+  id: string;
+  target_url: string;
+  status: string;
+  created_ip: string | null;
+  created_by: string | null;
+}
+
 const { insertFindings, uploadEvidence, getAuditPageId, getAudit } = vi.hoisted(() => ({
   insertFindings: vi.fn<(rows: Record<string, unknown>[]) => Promise<void>>(async () => {}),
   uploadEvidence: vi.fn(async () => "https://example.com/evidence/crop.webp"),
   getAuditPageId: vi.fn<(auditId: string, pageUrl?: string) => Promise<string | null>>(
     async () => "page-1"
   ),
-  getAudit: vi.fn(async (id: string) => {
+  getAudit: vi.fn<(id: string) => Promise<AuditRow>>(async (id: string) => {
     if (id === "missing-audit") throw new Error("not found");
     return {
       id,
       target_url: "https://example.com/",
       status: "complete",
       created_ip: "1.2.3.4",
+      // Owned by the default requireSession mock's userId ("user-1") — the
+      // happy-path tests exercise a caller who legitimately owns this
+      // audit; the auth-ordering describe block below covers a caller who
+      // does not.
+      created_by: "user-1",
     };
   }),
 }));
@@ -92,7 +105,13 @@ afterEach(() => {
   requireSession.mockResolvedValue({ ok: true as const, userId: "user-1" });
   getAudit.mockImplementation(async (id: string) => {
     if (id === "missing-audit") throw new Error("not found");
-    return { id, target_url: "https://example.com/", status: "complete", created_ip: "1.2.3.4" };
+    return {
+      id,
+      target_url: "https://example.com/",
+      status: "complete",
+      created_ip: "1.2.3.4",
+      created_by: "user-1",
+    };
   });
   getAuditPageId.mockResolvedValue("page-1");
 });
@@ -115,9 +134,9 @@ const failingBody = {
 };
 
 describe("POST /api/audits/[id]/contrast-finding", () => {
-  it("404s when the audit doesn't exist", async () => {
+  it("401s (not 404) when the audit doesn't exist — missing-audit and not-owner must be indistinguishable", async () => {
     const res = await POST(makeRequest(failingBody), { params: Promise.resolve({ id: "missing-audit" }) });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(401);
   });
 
   it("400s when required fields are missing", async () => {
@@ -173,7 +192,13 @@ describe("POST /api/audits/[id]/contrast-finding", () => {
     vi.clearAllMocks();
     getAuditPageId.mockResolvedValue("page-1");
     fakePage.evaluate.mockResolvedValueOnce(false);
-    await POST(makeRequest({ ...failingBody, hasText: false }), { params: Promise.resolve({ id: "audit-1" }) });
+    // Non-text (1.4.11) has a flat 3:1 floor, not the 4.5:1 text floor —
+    // failingBody's ~4.29:1 pair genuinely PASSES 3:1, so it can no longer
+    // be used here; #a8a8a8 on white (~2.38:1) fails both floors.
+    await POST(
+      makeRequest({ ...failingBody, hasText: false, fg: "#a8a8a8" }),
+      { params: Promise.resolve({ id: "audit-1" }) }
+    );
     expect(insertFindings.mock.calls[0][0][0].wcag_criterion).toBe("1.4.11");
   });
 
@@ -324,9 +349,35 @@ describe("POST /api/audits/[id]/contrast-finding", () => {
       expect(wrongIpRes.status).toBe(401);
     });
 
-    it("still returns 404 for a genuinely missing audit when the caller has a valid session", async () => {
+    it("still returns 401 (not 404) for a genuinely missing audit even with a valid session — a session alone must not leak audit existence", async () => {
       const res = await POST(makeRequest(failingBody), { params: Promise.resolve({ id: "missing-audit" }) });
-      expect(res.status).toBe(404);
+      expect(res.status).toBe(401);
+    });
+
+    it("regression: an authenticated session that does NOT own the audit cannot write a finding into it (auth bypass)", async () => {
+      // A valid session used to be sufficient on its own — this is the
+      // exact bug: any signed-in user could flag findings into ANY other
+      // user's audit by guessing/knowing its id, since only the anonymous
+      // (!auth.ok) branch ever checked ownership.
+      requireSession.mockResolvedValue({ ok: true, userId: "someone-else" });
+      const res = await POST(makeRequest(failingBody), { params: Promise.resolve({ id: "audit-1" }) });
+      expect(res.status).toBe(401);
+      expect(insertFindings).not.toHaveBeenCalled();
+    });
+
+    it("an authenticated caller whose session IP matches an anonymous (created_by: null) audit is still treated as the owner", async () => {
+      getAudit.mockResolvedValueOnce({
+        id: "audit-1",
+        target_url: "https://example.com/",
+        status: "complete",
+        created_ip: "1.2.3.4",
+        created_by: null,
+      });
+      const res = await POST(
+        makeRequest(failingBody, { "x-forwarded-for": "1.2.3.4" }),
+        { params: Promise.resolve({ id: "audit-1" }) }
+      );
+      expect(res.status).toBe(201);
     });
   });
 
@@ -343,8 +394,11 @@ describe("POST /api/audits/[id]/contrast-finding", () => {
 
     it("overrides a mismatched client hasText the other direction (client lies false, DOM says true)", async () => {
       fakePage.evaluate.mockResolvedValueOnce(true);
+      // The client-posted (pre-verification) hasText:false routes the early
+      // gate through the 3:1 non-text floor, so the pair must fail that
+      // floor too — failingBody's ~4.29:1 pair no longer does.
       await POST(
-        makeRequest({ ...failingBody, hasText: false }),
+        makeRequest({ ...failingBody, hasText: false, fg: "#a8a8a8" }),
         { params: Promise.resolve({ id: "audit-1" }) }
       );
       expect(insertFindings.mock.calls[0][0][0].wcag_criterion).toBe("1.4.3");
