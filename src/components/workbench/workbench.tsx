@@ -390,7 +390,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           {(
             [
               { key: "preview", label: "Checklist" },
-              { key: "explore", label: "Contrast Lab" },
+              { key: "explore", label: "Inspect" },
               { key: "screen-reader", label: "Screen Reader" },
             ] as const
           ).map((m) => (
