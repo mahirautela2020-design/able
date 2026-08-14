@@ -87,12 +87,27 @@ export async function GET(request: NextRequest) {
     // as-is under our proxy origin resolves every relative asset wrong.
     // Only keep an existing tag if it's already a valid absolute URL.
     const origin = target.origin;
-    const baseMatch = html.match(/<base\s[^>]*href=["']([^"']*)["'][^>]*>/i);
-    const hasValidAbsoluteBase = !!baseMatch && /^https?:\/\//i.test(baseMatch[1]);
+    // Match any existing <base> tag (with or without href — e.g. a
+    // target="_blank"-only base is valid HTML) so we replace it in place
+    // rather than leaving it and inserting a second <base>.
+    const baseMatch = html.match(/<base\b[^>]*>/i);
+    const baseHrefMatch = baseMatch ? baseMatch[0].match(/href=["']([^"']*)["']/i) : null;
+    // Protocol-relative hrefs ("//cdn.example.com/") are also valid
+    // absolute-host URLs, not just http(s)://.
+    const hasValidAbsoluteBase = !!baseHrefMatch && /^(https?:)?\/\//i.test(baseHrefMatch[1]);
     if (!hasValidAbsoluteBase) {
-      html = baseMatch
-        ? html.replace(/<base\s[^>]*>/i, `<base href="${origin}/">`)
-        : html.replace(/<head([^>]*)>/i, `<head$1><base href="${origin}/">`);
+      const newBaseTag = `<base href="${origin}/">`;
+      if (baseMatch) {
+        html = html.replace(baseMatch[0], newBaseTag);
+      } else if (/<head[^>]*>/i.test(html)) {
+        html = html.replace(/<head([^>]*)>/i, `<head$1>${newBaseTag}`);
+      } else if (/<html[^>]*>/i.test(html)) {
+        // Malformed page with no <head> at all — still inject one so
+        // relative assets don't silently resolve against our own origin.
+        html = html.replace(/<html([^>]*)>/i, `<html$1><head>${newBaseTag}</head>`);
+      } else {
+        html = `<head>${newBaseTag}</head>${html}`;
+      }
     }
 
     // Make our response iframe-able: we simply don't set the blocking

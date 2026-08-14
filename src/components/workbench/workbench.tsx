@@ -83,6 +83,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [hasDownloadedPdf, setHasDownloadedPdf] = useState(false);
   const [rerunWarning, setRerunWarning] = useState<{ urlOverride?: string } | null>(null);
+  const [rerunWarningDownloadFailed, setRerunWarningDownloadFailed] = useState(false);
   const [editingUrl, setEditingUrl] = useState(false);
   const [urlDraft, setUrlDraft] = useState(targetUrl);
   const [rerunning, setRerunning] = useState(false);
@@ -253,8 +254,11 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
     return Math.min(100, Math.round((progress.pagesDone / progress.pagesTotal) * 100));
   }, [progress]);
 
-  /** Download the 16:9 PDF with the session token (endpoint is auth-gated). */
-  async function handleDownloadPdf() {
+  /** Download the 16:9 PDF with the session token (endpoint is auth-gated).
+   * Returns whether the download actually succeeded, so callers that only
+   * want to proceed (e.g. the rerun-warning modal) don't act on a silent
+   * failure. */
+  async function handleDownloadPdf(): Promise<boolean> {
     setDownloadingPdf(true);
     try {
       const {
@@ -274,8 +278,10 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
       a.remove();
       URL.revokeObjectURL(url);
       setHasDownloadedPdf(true);
+      return true;
     } catch (e) {
       console.error("PDF download failed:", e);
+      return false;
     } finally {
       setDownloadingPdf(false);
     }
@@ -287,6 +293,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   // they've downloaded a PDF, or if there's nothing finished to lose yet.
   function requestRerun(urlOverride?: string) {
     if (status === "complete" && !hasDownloadedPdf) {
+      setRerunWarningDownloadFailed(false);
       setRerunWarning({ urlOverride });
       return;
     }
@@ -296,6 +303,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   // Re-run: POST the same (or edited) URL to start a fresh audit, then
   // navigate to its workbench.
   async function handleRerun(urlOverride?: string) {
+    if (rerunning) return;
     const url = (urlOverride || urlDraft || targetUrl).trim();
     if (!url) return;
     setRerunning(true);
@@ -771,31 +779,43 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
                 This audit&apos;s results aren&apos;t deleted, but you&apos;ll need this page&apos;s link to
                 see them again once a new audit replaces it here.
               </p>
+              {rerunWarningDownloadFailed && (
+                <p className="text-xs text-red-600">Download failed — try again, or continue without it.</p>
+              )}
               <div className="flex justify-end gap-2">
                 <button
                   onClick={() => setRerunWarning(null)}
-                  className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
+                  disabled={downloadingPdf || rerunning}
+                  className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={async () => {
                     const { urlOverride } = rerunWarning;
-                    await handleDownloadPdf();
+                    const downloaded = await handleDownloadPdf();
+                    if (!downloaded) {
+                      setRerunWarningDownloadFailed(true);
+                      return;
+                    }
                     setRerunWarning(null);
+                    setRerunWarningDownloadFailed(false);
                     handleRerun(urlOverride);
                   }}
-                  className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
+                  disabled={downloadingPdf || rerunning}
+                  className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors disabled:opacity-50"
                 >
-                  Download PDF
+                  {downloadingPdf ? "Preparing…" : "Download PDF"}
                 </button>
                 <button
                   onClick={() => {
                     const { urlOverride } = rerunWarning;
                     setRerunWarning(null);
+                    setRerunWarningDownloadFailed(false);
                     handleRerun(urlOverride);
                   }}
-                  className="text-xs px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+                  disabled={downloadingPdf || rerunning}
+                  className="text-xs px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
                 >
                   Continue anyway
                 </button>
