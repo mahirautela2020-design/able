@@ -13,7 +13,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function stubFetch({ postAuditsCalled }: { postAuditsCalled: (body: unknown) => void }) {
+function stubFetch({
+  postAuditsCalled,
+  pdfOk = true,
+}: {
+  postAuditsCalled: (body: unknown) => void;
+  pdfOk?: boolean;
+}) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -22,6 +28,7 @@ function stubFetch({ postAuditsCalled }: { postAuditsCalled: (body: unknown) => 
         return { ok: true, json: async () => ({ blocked: false }) };
       }
       if (url.includes("/pdf")) {
+        if (!pdfOk) return { ok: false, status: 500 };
         return { ok: true, blob: async () => new Blob(["fake-pdf"]) };
       }
       if (url === "/api/audits" && init?.method === "POST") {
@@ -99,6 +106,26 @@ describe("Workbench — warn before a completed audit's results become hard to f
       screen.queryByText("Download this report before starting a new audit?")
     ).not.toBeInTheDocument();
     await waitFor(() => expect(postAuditsCalled).toHaveBeenCalled());
+  });
+
+  it("regression: a failed PDF download does NOT proceed with the re-run, and surfaces an error instead of silently continuing", async () => {
+    const postAuditsCalled = vi.fn();
+    stubFetch({ postAuditsCalled, pdfOk: false });
+    render(
+      <Workbench auditId="audit-1" targetUrl="https://example.com" auditStatus="complete" findings={[]} />
+    );
+
+    fireEvent.click(screen.getByText("Re-run"));
+    const downloadButtons = screen.getAllByText("Download PDF");
+    fireEvent.click(downloadButtons[downloadButtons.length - 1]);
+
+    await waitFor(() =>
+      expect(screen.getByText(/download failed/i)).toBeInTheDocument()
+    );
+    expect(
+      screen.getByText("Download this report before starting a new audit?")
+    ).toBeInTheDocument();
+    expect(postAuditsCalled).not.toHaveBeenCalled();
   });
 
   it("does not warn for a non-complete audit (nothing finished to lose yet)", async () => {
