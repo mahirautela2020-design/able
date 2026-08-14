@@ -21,6 +21,18 @@ const AA_LARGE = 3.0;
 const AAA_NORMAL = 7.0;
 const AAA_LARGE = 4.5;
 
+/** The WCAG-required ratio for a given level + text size — the four
+ * constants above, exposed so callers (e.g. the Contrast Lab's AA/AAA +
+ * normal/large target selector) don't have to duplicate the threshold
+ * table. */
+export function requiredContrastRatio(
+  level: "AA" | "AAA",
+  largeText: boolean
+): number {
+  if (level === "AAA") return largeText ? AAA_LARGE : AAA_NORMAL;
+  return largeText ? AA_LARGE : AA_NORMAL;
+}
+
 export function hexToRgb(hex: string): Rgb {
   let h = hex.replace("#", "").trim();
   if (h.length === 3) {

@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -22,7 +24,7 @@ import {
   getRequiredModuleIds,
   type ModuleSelection,
 } from "@/lib/audit-modules";
-import { ArrowLeft, Search } from "lucide-react";
+import { ArrowLeft, Loader2, Search } from "lucide-react";
 
 function buildDefaultSelection(): ModuleSelection[] {
   const standardPreset = getPresetById("standard");
@@ -36,9 +38,11 @@ function buildDefaultSelection(): ModuleSelection[] {
 }
 
 export default function AuditConfigPage() {
+  const router = useRouter();
   const [selected, setSelected] = useState<ModuleSelection[]>(buildDefaultSelection);
   const [activePreset, setActivePreset] = useState<string | null>("standard");
   const [url, setUrl] = useState("");
+  const [starting, setStarting] = useState(false);
 
   function handlePresetSelect(presetId: string) {
     const preset = getPresetById(presetId);
@@ -56,9 +60,41 @@ export default function AuditConfigPage() {
     );
   }
 
+  // A manual toggle after picking a preset means the selection is no longer
+  // that preset — the Summary card should say "Custom", not the stale name.
+  function handleModuleChange(next: ModuleSelection[]) {
+    setActivePreset(null);
+    setSelected(next);
+  }
+
   const enabledIds = selected.filter((s) => s.enabled).map((s) => s.moduleId);
   const coverage = getModuleWcagCoverage(enabledIds);
   const runtime = totalEstimatedRuntime(enabledIds);
+
+  async function handleStartAudit() {
+    if (!url.trim()) return;
+    setStarting(true);
+    try {
+      const res = await fetch("/api/audits", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, modules: enabledIds }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to start audit");
+        return;
+      }
+
+      toast.success("Audit started");
+      router.push(`/workbench/${data.id}`);
+    } catch {
+      toast.error("Failed to start audit");
+    } finally {
+      setStarting(false);
+    }
+  }
 
   return (
     <div className="flex-1 w-full max-w-4xl mx-auto px-4 py-12">
@@ -96,8 +132,12 @@ export default function AuditConfigPage() {
                 onChange={(e) => setUrl(e.target.value)}
                 className="flex-1"
               />
-              <Button disabled={!url.trim()}>
-                <Search className="h-4 w-4" />
+              <Button disabled={!url.trim() || starting} onClick={handleStartAudit}>
+                {starting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
                 <span className="ml-2">Start Audit</span>
               </Button>
             </div>
@@ -127,7 +167,7 @@ export default function AuditConfigPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ModuleSelector selected={selected} onChange={setSelected} />
+            <ModuleSelector selected={selected} onChange={handleModuleChange} />
           </CardContent>
         </Card>
 

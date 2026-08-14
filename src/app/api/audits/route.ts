@@ -1,6 +1,7 @@
 import { sanitizeUrl, validateHost } from "@/engine/crawl";
 import { insertAudit, getRecentAudits, deleteAudit, countAuditsByIp, getAudit } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
+import { getClientIp } from "@/lib/http";
 import { inngest } from "@/inngest/client";
 
 const ANON_DAILY_LIMIT = parseInt(process.env.ANON_DAILY_LIMIT || "5", 10);
@@ -13,7 +14,11 @@ export async function POST(request: Request) {
   const ip = getClientIp(request);
 
   try {
-    const { url } = await request.json();
+    const { url, modules } = await request.json();
+    const moduleIds: string[] | undefined =
+      Array.isArray(modules) && modules.every((m) => typeof m === "string")
+        ? modules
+        : undefined;
 
     if (!url || typeof url !== "string") {
       return Response.json(
@@ -56,6 +61,7 @@ export async function POST(request: Request) {
 
     const auditId = await insertAudit(url, {
       maxPages: parseInt(process.env.MAX_PAGES || "5", 10),
+      ...(moduleIds ? { modules: moduleIds } : {}),
     }, {
       userId: auth.ok ? auth.userId : null,
       ip,
@@ -63,7 +69,7 @@ export async function POST(request: Request) {
 
     await inngest.send({
       name: "audit/url",
-      data: { auditId, url },
+      data: moduleIds ? { auditId, url, modules: moduleIds } : { auditId, url },
     });
 
     return Response.json({ id: auditId }, { status: 201 });
@@ -98,11 +104,6 @@ export async function GET(request: Request) {
 }
 
 /** Best-effort client IP from Vercel/Next headers. */
-function getClientIp(request: Request): string | null {
-  const fwd = request.headers.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0].trim();
-  return request.headers.get("x-real-ip") ?? null;
-}
 
 export async function DELETE(request: Request) {
   // Destructive but owner-scoped: signed-in users delete their own audits;
