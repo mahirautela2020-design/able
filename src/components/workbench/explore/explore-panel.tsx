@@ -292,7 +292,12 @@ export function ExplorePanel({ targetUrl, auditId }: ExplorePanelProps) {
 
         <section className="border-b">
           <SectionTitle title="Live contrast" />
-          <ContrastFix element={picked} auditId={auditId} onApply={handleApplyFix} />
+          <ContrastFix
+            element={picked}
+            auditId={auditId}
+            pageUrl={targetUrl}
+            onApply={handleApplyFix}
+          />
         </section>
 
         <section className="border-b">

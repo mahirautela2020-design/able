@@ -21,6 +21,10 @@ export interface InspectedElement {
   ancestors: string[];
   bbox: Bbox;
   computed: { color: string; backgroundColor: string };
+  /** Real visible textContent, not the accessible name — an icon button
+   * with only an aria-label has no visible text, so it's 1.4.11 (non-text
+   * contrast), not 1.4.3, even though its accessible `name` is non-empty. */
+  hasText: boolean;
 }
 
 export interface ContrastPairSample {

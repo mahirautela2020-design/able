@@ -53,6 +53,9 @@ export const ABLE_INSPECT_BRIDGE_SCRIPT = `
         }
         return sel;
       }
+      function hasVisibleText(el) {
+        return (el.textContent || "").trim().length > 0;
+      }
       function inspect(x, y) {
         var el = document.elementFromPoint(x, y);
         if (!el || el === document.documentElement || el === document.body) return null;
@@ -81,7 +84,8 @@ export const ABLE_INSPECT_BRIDGE_SCRIPT = `
           tabIndex: el.tabIndex >= 0 ? el.tabIndex : null,
           ancestors: ancestors,
           bbox: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-          computed: { color: rgbToHex(cs.color), backgroundColor: resolveBg(el) }
+          computed: { color: rgbToHex(cs.color), backgroundColor: resolveBg(el) },
+          hasText: hasVisibleText(el)
         };
       }
       function focusables() {
