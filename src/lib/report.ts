@@ -101,6 +101,25 @@ export async function buildReportHtml(auditId: string): Promise<string> {
     );
   }
 
+  // Evidence appendix: one entry per finding that has a screenshot, each on
+  // its own 16:9 print page. Emits the RAW stored evidence path (not a
+  // signed URL) — the PDF route's resolveSignedUrls() does a string
+  // substitution pass over this same HTML afterward, replacing each raw
+  // path with a short-lived signed URL so the image actually loads.
+  const evidenceEntries: string[] = [];
+  for (const f of findings || []) {
+    const imgUrl = f.screenshot_crop_url || f.full_screenshot_url;
+    if (!imgUrl) continue;
+    evidenceEntries.push(
+      `<div class="evidence-entry">
+        <h3>${escapeHtml(f.rule_title)} <span class="evidence-sc">${escapeHtml(f.wcag_criterion || "best-practice")}</span></h3>
+        <p class="meta">${escapeHtml(f.selector || "")}</p>
+        <p>${escapeHtml(f.failure_summary || "")}</p>
+        <img src="${escapeHtml(imgUrl)}" alt="Screenshot evidence for ${escapeHtml(f.rule_title)}" class="evidence-img">
+      </div>`
+    );
+  }
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -121,6 +140,10 @@ export async function buildReportHtml(auditId: string): Promise<string> {
     .moderate { color: #ca8a04; }
     .minor { color: #2563eb; }
     .footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #e5e5e5; font-size: 0.75rem; color: #999; }
+    .evidence-entry { page-break-before: always; padding-top: 1rem; }
+    .evidence-entry h3 { font-size: 1.1rem; margin-bottom: 0.25rem; }
+    .evidence-sc { font-family: monospace; font-weight: 400; color: #666; font-size: 0.85rem; }
+    .evidence-img { max-width: 100%; max-height: 480px; object-fit: contain; border: 1px solid #e5e5e5; border-radius: 4px; margin-top: 0.5rem; }
   </style>
 </head>
 <body>
@@ -155,6 +178,8 @@ export async function buildReportHtml(auditId: string): Promise<string> {
     <thead><tr><th>Severity</th><th>WCAG</th><th>Rule</th><th>Summary</th><th>Bucket</th></tr></thead>
     <tbody>${findingsRows.join("")}</tbody>
   </table>
+
+  ${evidenceEntries.length > 0 ? `<h2>Evidence</h2>${evidenceEntries.join("")}` : ""}
 
   <p class="footer">
     Audited with ScanA11y 0.1 — Chromium headless. Fonts and rendering may differ from real browsers.
