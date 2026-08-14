@@ -14,7 +14,6 @@ const base: InspectedElement = {
   role: "button",
   name: "",
   touchTarget: { width: 120, height: 40 },
-  hasText: true,
 };
 
 describe("mapElementToScs", () => {

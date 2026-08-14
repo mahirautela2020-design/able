@@ -63,7 +63,6 @@ function ToggleButton({
 
 interface ExploreWorkbenchProps {
   targetUrl: string;
-  auditId: string | null;
   findings: FindingRow[];
   scopePages: { id: string; page_title: string | null }[];
   auditUrl: string;
@@ -72,7 +71,6 @@ interface ExploreWorkbenchProps {
 
 export function ExploreWorkbench({
   targetUrl,
-  auditId,
   findings,
   scopePages,
   auditUrl,
@@ -99,7 +97,7 @@ export function ExploreWorkbench({
             auditCreatedAt={auditCreatedAt}
           />
         ) : (
-          <ExplorePanel targetUrl={targetUrl} auditId={auditId} />
+          <ExplorePanel targetUrl={targetUrl} />
         )}
       </div>
     </div>

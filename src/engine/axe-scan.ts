@@ -66,21 +66,6 @@ export interface ScanResult {
   screenshot: Buffer;
 }
 
-// The `automated` module (src/lib/audit-modules.ts) advertises coverage of
-// every non-manual SC in the registry, including AAA — the *aaa tags must
-// stay here or that promise silently doesn't hold.
-export const AXE_RUN_TAGS = [
-  "wcag2a",
-  "wcag2aa",
-  "wcag2aaa",
-  "wcag21a",
-  "wcag21aa",
-  "wcag21aaa",
-  "wcag22aa",
-  "wcag22aaa",
-  "best-practice",
-];
-
 export async function runAxe(page: Page): Promise<ScanResult> {
   // Resolve axe-core from the filesystem directly. Next.js/Turbopack mangles
   // require.resolve() output inside server bundles (returns the module spec
@@ -91,14 +76,20 @@ export async function runAxe(page: Page): Promise<ScanResult> {
 
   const axeResult = await Promise.race([
     page.evaluate(
-      (tags) =>
+      () =>
         window.axe.run({
           runOnly: {
             type: "tag",
-            values: tags,
+            values: [
+              "wcag2a",
+              "wcag2aa",
+              "wcag21a",
+              "wcag21aa",
+              "wcag22aa",
+              "best-practice",
+            ],
           },
         }) as Promise<AxeResult>,
-      AXE_RUN_TAGS,
     ),
     new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("AXE_TIMEOUT")), 15_000)

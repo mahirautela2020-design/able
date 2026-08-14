@@ -15,7 +15,6 @@ const el: InspectedElement = {
   ancestors: ["main"],
   bbox: { x: 0, y: 0, width: 120, height: 40 },
   computed: { color: "#7a7a7a", backgroundColor: "#ffffff" },
-  hasText: true,
 };
 
 describe("InspectorPanel", () => {

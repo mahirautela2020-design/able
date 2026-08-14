@@ -10,8 +10,6 @@ import { captureLiveAnnouncements } from "@/lib/sr/announcer";
 import { captureAxTree } from "@/engine/ax-tree";
 import { runAxChecks } from "@/engine/ax-checks";
 import { axTreeToTranscript } from "@/engine/sr-speech";
-import { scanResponsive } from "@/engine/responsive-scan";
-import { resolveModuleIds, resolveModuleGates } from "@/lib/audit-modules";
 import {
   updateAuditStatus,
   updateAuditProgress,
@@ -70,15 +68,7 @@ export const auditUrl = inngest.createFunction(
     },
   },
   async ({ event, step }) => {
-    const { auditId, url, modules } = event.data as {
-      auditId: string;
-      url: string;
-      modules?: string[];
-    };
-    // No `modules` sent (older callers, MCP) -> behaves exactly as before
-    // this phase: the "standard" preset's steps all run.
-    const moduleIds = resolveModuleIds(modules);
-    const gates = resolveModuleGates(moduleIds);
+    const { auditId, url } = event.data as { auditId: string; url: string };
 
     await step.run("crawl", async () => {
       await updateAuditStatus(auditId, "running");
@@ -140,60 +130,34 @@ export const auditUrl = inngest.createFunction(
           await waitForPageSettle(page, telemetry);
 
           const { findings, axeVersion, screenshot } = await runAxe(page);
-          const keyboardResult = gates.keyboard
-            ? await runKeyboard(page)
-            : {
-                findings: [] as typeof findings,
-                focusableCount: 0,
-                tabSequence: [],
-                deadEndBeforeCompletion: false,
-                focusTrapDetected: false,
-                focusIndicatorMissing: false,
-              };
+          const keyboardResult = await runKeyboard(page);
 
           const allFindingsForPage = [...findings, ...keyboardResult.findings];
 
-          // P11: AX-tree capture + deterministic checks (best-effort),
-          // gated behind the "aria"/"screen-reader" modules — either enables it.
+          // P11: AX-tree capture + deterministic checks (best-effort)
           let axTranscript: string[] = [];
-          if (gates.axTree) {
-            try {
-              const axNodes = await captureAxTree(page);
-              if (axNodes.length > 0) {
-                const axFindings = runAxChecks(axNodes);
-                allFindingsForPage.push(...axFindings);
-                axTranscript = axTreeToTranscript(axNodes);
-              }
-            } catch {
-              // AX capture is best-effort
+          try {
+            const axNodes = await captureAxTree(page);
+            if (axNodes.length > 0) {
+              const axFindings = runAxChecks(axNodes);
+              allFindingsForPage.push(...axFindings);
+              axTranscript = axTreeToTranscript(axNodes);
             }
+          } catch {
+            // AX capture is best-effort
           }
 
           let srSnapshot = null;
           let srAnnouncements: Array<{ text: string; timestamp: number; source: string }> = [];
-          if (gates.axTree) {
-            try {
-              srSnapshot = await captureAriaSnapshot(page);
-            } catch {
-              // SR snapshot capture is best-effort
-            }
-            try {
-              srAnnouncements = await captureLiveAnnouncements(page);
-            } catch {
-              // SR announcements capture is best-effort
-            }
+          try {
+            srSnapshot = await captureAriaSnapshot(page);
+          } catch {
+            // SR snapshot capture is best-effort
           }
-
-          // Responsive/reflow re-scan (WCAG 1.4.10), gated behind "responsive".
-          // Runs after runAxe's screenshot capture (fixed 1440x900) since it
-          // mutates the page's viewport — must not run before the screenshot.
-          if (gates.responsive) {
-            try {
-              const responsiveFindings = await scanResponsive(page);
-              allFindingsForPage.push(...responsiveFindings);
-            } catch {
-              // Responsive scan is best-effort
-            }
+          try {
+            srAnnouncements = await captureLiveAnnouncements(page);
+          } catch {
+            // SR announcements capture is best-effort
           }
 
           const srEvidence: Record<string, unknown> = {};

@@ -35,17 +35,10 @@ export async function launchBrowser(): Promise<Browser> {
   return browser;
 }
 
-export interface WithPageOptions {
-  viewport?: { width: number; height: number };
-}
-
-export async function withPage<T>(
-  fn: (page: Page) => Promise<T>,
-  options: WithPageOptions = {}
-): Promise<T> {
+export async function withPage<T>(fn: (page: Page) => Promise<T>): Promise<T> {
   const browser = await launchBrowser();
   const context = await browser.newContext({
-    viewport: options.viewport ?? { width: 1440, height: 900 },
+    viewport: { width: 1440, height: 900 },
     userAgent: USER_AGENT,
   });
   const page = await context.newPage();
