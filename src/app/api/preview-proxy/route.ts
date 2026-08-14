@@ -47,6 +47,13 @@ export async function GET(request: NextRequest) {
         "user-agent": browserUa,
         accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "accept-language": "en-US,en;q=0.9",
+        // A same-origin-looking navigation reduces false-positive WAF/bot
+        // rejections on sites that check these — this is still a bounded
+        // fidelity improvement, not an attempt to defeat real bot
+        // detection (Cloudflare/Akamai challenge pages etc. will still
+        // never render through any server-side proxy, and that's fine).
+        referer: `${target.origin}/`,
+        "sec-fetch-mode": "navigate",
       },
       signal: AbortSignal.timeout(15000),
     });
@@ -75,11 +82,17 @@ export async function GET(request: NextRequest) {
 
     // Inject <base href> so relative/absolute subresources resolve against
     // the REAL site (we only proxy the document; assets load directly).
+    // A site's own <base> tag is usually a relative or path-only href
+    // (meant to be resolved against ITS OWN url, not ours) — leaving that
+    // as-is under our proxy origin resolves every relative asset wrong.
+    // Only keep an existing tag if it's already a valid absolute URL.
     const origin = target.origin;
-    if (!/<base\s/i.test(html)) {
-      html = html.replace(/<head([^>]*)>/i, `<head$1><base href="${origin}/">`);
-    } else {
-      // Some sites set their own <base> — leave it (their call).
+    const baseMatch = html.match(/<base\s[^>]*href=["']([^"']*)["'][^>]*>/i);
+    const hasValidAbsoluteBase = !!baseMatch && /^https?:\/\//i.test(baseMatch[1]);
+    if (!hasValidAbsoluteBase) {
+      html = baseMatch
+        ? html.replace(/<base\s[^>]*>/i, `<base href="${origin}/">`)
+        : html.replace(/<head([^>]*)>/i, `<head$1><base href="${origin}/">`);
     }
 
     // Make our response iframe-able: we simply don't set the blocking
