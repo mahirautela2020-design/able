@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { getWcagRegistry, getScById, deriveRuleMappings, NEW_IN_22 } from "@/engine/wcag-registry";
+import {
+  getWcagRegistry,
+  getScById,
+  deriveRuleMappings,
+  axeCoveredScIds,
+  normalizeTag,
+  NEW_IN_22,
+} from "@/engine/wcag-registry";
 
 describe("wcag-registry", () => {
   it("has exactly 86 success criteria (WCAG 2.2, 4.1.1 absent)", () => {
@@ -65,5 +72,35 @@ describe("wcag-registry", () => {
         expect(registryIds.has(scId)).toBe(true);
       }
     }
+  });
+
+  it("regression: deriveRuleMappings includes AAA-only rules (color-contrast-enhanced -> 1.4.6)", () => {
+    // Before this fix, axe.getRules() was only asked for A/AA tags, so
+    // AAA-only rules (this PR turns AAA scanning on) never appeared in the
+    // mapping at all — their violations could never resolve to an SC id.
+    const mappings = deriveRuleMappings();
+    expect(mappings.get("color-contrast-enhanced")).toContain("1.4.6");
+  });
+
+  it("normalizeTag converts an axe-style tag to the registry's dotted id", () => {
+    expect(normalizeTag("wcag143")).toBe("1.4.3");
+    expect(normalizeTag("wcag1411")).toBe("1.4.11");
+  });
+
+  it("normalizeTag is idempotent on already-dotted input", () => {
+    expect(normalizeTag("1.4.3")).toBe("1.4.3");
+  });
+
+  it("normalizeTag passes non-SC tags through unchanged", () => {
+    expect(normalizeTag("wcag2aa")).toBe("wcag2aa");
+  });
+
+  it("axeCoveredScIds returns a narrower, real-coverage set (not every non-manual SC)", () => {
+    const ids = axeCoveredScIds();
+    const registry = getWcagRegistry();
+    const automatableCount = registry.filter((sc) => !sc.manualTest).length;
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids.length).toBeLessThan(automatableCount);
+    expect(ids).toContain("1.4.3");
   });
 });

@@ -2,6 +2,7 @@ import { readFileSync } from "fs";
 import path from "path";
 import type { Page } from "playwright-core";
 import { takeScreenshot } from "./browser";
+import { deriveRuleMappings } from "./wcag-registry";
 
 declare global {
   interface Window {
@@ -12,7 +13,7 @@ declare global {
   }
 }
 
-interface AxeResult {
+export interface AxeResult {
   violations: AxeViolation[];
   passes: unknown[];
   incomplete: AxeViolation[];
@@ -20,7 +21,7 @@ interface AxeResult {
   testEngine: { name: string; version: string };
 }
 
-interface AxeViolation {
+export interface AxeViolation {
   id: string;
   help: string;
   helpUrl: string;
@@ -30,7 +31,7 @@ interface AxeViolation {
   nodes: AxeNode[];
 }
 
-interface AxeNode {
+export interface AxeNode {
   html: string;
   impact: string | null;
   target: string[];
@@ -66,6 +67,21 @@ export interface ScanResult {
   screenshot: Buffer;
 }
 
+// The `automated` module (src/lib/audit-modules.ts) advertises coverage of
+// every non-manual SC in the registry, including AAA — the *aaa tags must
+// stay here or that promise silently doesn't hold.
+export const AXE_RUN_TAGS = [
+  "wcag2a",
+  "wcag2aa",
+  "wcag2aaa",
+  "wcag21a",
+  "wcag21aa",
+  "wcag21aaa",
+  "wcag22aa",
+  "wcag22aaa",
+  "best-practice",
+];
+
 export async function runAxe(page: Page): Promise<ScanResult> {
   // Resolve axe-core from the filesystem directly. Next.js/Turbopack mangles
   // require.resolve() output inside server bundles (returns the module spec
@@ -76,20 +92,14 @@ export async function runAxe(page: Page): Promise<ScanResult> {
 
   const axeResult = await Promise.race([
     page.evaluate(
-      () =>
+      (tags) =>
         window.axe.run({
           runOnly: {
             type: "tag",
-            values: [
-              "wcag2a",
-              "wcag2aa",
-              "wcag21a",
-              "wcag21aa",
-              "wcag22aa",
-              "best-practice",
-            ],
+            values: tags,
           },
         }) as Promise<AxeResult>,
+      AXE_RUN_TAGS,
     ),
     new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("AXE_TIMEOUT")), 15_000)
@@ -176,12 +186,17 @@ async function resolveBboxes(
   return bboxMap;
 }
 
-function extractFindings(
+export function extractFindings(
   result: AxeResult,
   axeVersion: string,
   bboxes: Map<string, { x: number; y: number; width: number; height: number }>
 ): Finding[] {
   const findings: Finding[] = [];
+  // axe's own tags array lists the WCAG *level* tag ("wcag2aa") before the
+  // rule-specific SC tag ("wcag143"), so picking tags[0] as "the criterion"
+  // silently stores a level, not a criterion. deriveRuleMappings() resolves
+  // each rule id to its real, dotted SC id(s) instead.
+  const ruleMappings = deriveRuleMappings();
 
   for (const violation of [
     ...result.violations.map((v) => ({ ...v, _type: "violation" as const })),
@@ -192,6 +207,7 @@ function extractFindings(
     const wcagTags = violation.tags.filter(
       (t) => t.startsWith("wcag") || t.startsWith("section508")
     );
+    const mappedScIds = ruleMappings.get(violation.id) ?? [];
 
     const severityMap: Record<string, Finding["severity"]> = {
       critical: "critical",
@@ -208,7 +224,17 @@ function extractFindings(
       const key = `${violation.id}-${node.target.join(" ")}`;
       const bbox = bboxes.get(key) || null;
 
-      const wcagCriterion = wcagTags.length > 0 ? wcagTags[0] : null;
+      // Prefer the resolved dotted SC id(s). Fall back to the raw axe tags
+      // only for the rare rule with no registry mapping (e.g. a
+      // section508-only rule) — and even then, prefer a rule-specific tag
+      // ("wcag143") over a level tag ("wcag2aa"/"wcag21a"): axe always lists
+      // the level tag first, so a plain [0] pick would silently repeat the
+      // original bug for this fallback path.
+      const specificFallbackTag = wcagTags.find((t) => /^wcag\d{3,}$/.test(t));
+      const wcagCriterion =
+        mappedScIds.length > 0
+          ? mappedScIds[0]
+          : specificFallbackTag ?? (wcagTags.length > 0 ? wcagTags[0] : null);
 
       findings.push({
         bucket: isIncomplete
@@ -218,7 +244,7 @@ function extractFindings(
             : "automated",
         rule_id: violation.id,
         rule_title: violation.help,
-        wcag_criteria: wcagTags,
+        wcag_criteria: mappedScIds.length > 0 ? mappedScIds : wcagTags,
         wcag_criterion: isBestPractice ? null : wcagCriterion,
         wcag_level: extractWcagLevel(wcagTags),
         principle: extractPrinciple(wcagCriterion),

@@ -1,5 +1,5 @@
 import type { Finding } from "@/engine/axe-scan";
-import { getWcagRegistry } from "@/engine/wcag-registry";
+import { getWcagRegistry, normalizeTag } from "@/engine/wcag-registry";
 
 export interface WcagScoreEntry {
   id: string;
@@ -43,7 +43,19 @@ function deduplicate(findings: Finding[]): Finding[] {
   });
 }
 
-export function computeComplianceMatrix(findings: Finding[]): ComplianceMatrix {
+/**
+ * @param testedScIds When provided, only these SC ids are eligible to fall
+ * back to "automated-pass" (an automatable SC with zero findings against
+ * it). SCs outside this set stay "manual" instead of being reported as
+ * passed — a module the user disabled never ran, so there's no basis to
+ * claim it passed. Omit to keep the pre-module-gating behavior (every
+ * automatable SC is eligible), used by callers that don't have a module
+ * selection to scope against.
+ */
+export function computeComplianceMatrix(
+  findings: Finding[],
+  testedScIds?: Iterable<string>
+): ComplianceMatrix {
   const registry = getWcagRegistry();
   const scMap = new Map<string, WcagScoreEntry>();
 
@@ -62,8 +74,16 @@ export function computeComplianceMatrix(findings: Finding[]): ComplianceMatrix {
   const failMap = new Map<string, string[]>();
   const reviewMap = new Map<string, string[]>();
 
+  // Producers disagree on wcag_criteria's tag convention — axe-scan.ts now
+  // stores dotted registry ids, but several producers (contrast-lab,
+  // responsive-scan, sr-speech, ax-checks) still store raw axe-style tags
+  // ("wcag143"). normalizeTag() is idempotent on already-dotted input, so
+  // normalizing every entry here matches both conventions without requiring
+  // every producer to agree on one — a level-only tag ("wcag2aa") simply
+  // fails to match any registry id and is harmlessly skipped.
   for (const f of findings) {
-    for (const sc of f.wcag_criteria) {
+    for (const rawSc of f.wcag_criteria) {
+      const sc = normalizeTag(rawSc);
       if (f.bucket === "automated") {
         const existing = failMap.get(sc) || [];
         existing.push(f.rule_id);
@@ -92,8 +112,10 @@ export function computeComplianceMatrix(findings: Finding[]): ComplianceMatrix {
     }
   }
 
+  const testedSet = testedScIds ? new Set(testedScIds) : null;
+
   for (const sc of registry) {
-    if (!sc.manualTest) {
+    if (!sc.manualTest && (!testedSet || testedSet.has(sc.id))) {
       scMap.set(sc.id, {
         ...scMap.get(sc.id)!,
         ...(scMap.get(sc.id)!.status === "manual"

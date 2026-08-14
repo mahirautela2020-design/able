@@ -1,7 +1,22 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ContrastFix } from "@/components/workbench/explore/contrast-fix";
 import type { InspectedElement } from "@/lib/explore/types";
+
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
+vi.mock("@/lib/supabase/client", () => ({
+  authHeaders: vi.fn(async () => ({ Authorization: "Bearer test-token" })),
+}));
+
+import { toast } from "sonner";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
+});
 
 const failing: InspectedElement = {
   role: "button",
@@ -15,18 +30,19 @@ const failing: InspectedElement = {
   ancestors: ["main"],
   bbox: { x: 0, y: 0, width: 120, height: 40 },
   computed: { color: "#7a7a7a", backgroundColor: "#ffffff" },
+  hasText: true,
 };
 
 describe("ContrastFix", () => {
   it("shows a failing contrast verdict with a fix", () => {
-    render(<ContrastFix element={failing} onApply={() => {}} />);
+    render(<ContrastFix element={failing} auditId="audit-1" onApply={() => {}} />);
     expect(screen.getByTestId("contrast-verdict")).toHaveTextContent("fails AA");
     expect(screen.getByText(/Suggested fix/)).toBeInTheDocument();
   });
 
   it("apply fix calls onApply with the selector and a hex color", () => {
     const onApply = vi.fn();
-    render(<ContrastFix element={failing} onApply={onApply} />);
+    render(<ContrastFix element={failing} auditId="audit-1" onApply={onApply} />);
     fireEvent.click(screen.getByText("Apply fix"));
     expect(onApply).toHaveBeenCalledWith("#cta", expect.stringMatching(/^#[0-9a-f]{6}$/));
   });
@@ -36,13 +52,212 @@ describe("ContrastFix", () => {
       ...failing,
       computed: { color: "#000000", backgroundColor: "#ffffff" },
     };
-    render(<ContrastFix element={passing} onApply={() => {}} />);
+    render(<ContrastFix element={passing} auditId="audit-1" onApply={() => {}} />);
     expect(screen.getByTestId("contrast-verdict")).toHaveTextContent("passes");
     expect(screen.queryByText(/Suggested fix/)).not.toBeInTheDocument();
   });
 
   it("shows empty state when nothing picked", () => {
-    render(<ContrastFix element={null} onApply={() => {}} />);
+    render(<ContrastFix element={null} auditId="audit-1" onApply={() => {}} />);
     expect(screen.getByTestId("contrast-fix-empty")).toBeInTheDocument();
+  });
+
+  it("shows the APCA Lc value labeled as informational", () => {
+    render(<ContrastFix element={failing} auditId="audit-1" onApply={() => {}} />);
+    const apca = screen.getByTestId("apca-readout");
+    expect(apca).toHaveTextContent(/Lc/i);
+    expect(apca).toHaveTextContent(/informational/i);
+  });
+
+  it("defaults to AA normal-text target — passing element shows no fix", () => {
+    const passing: InspectedElement = { ...failing, computed: { color: "#000000", backgroundColor: "#ffffff" } };
+    render(<ContrastFix element={passing} auditId="audit-1" onApply={() => {}} />);
+    expect(screen.queryByText(/Suggested fix/)).not.toBeInTheDocument();
+  });
+
+  it("switching the target to AAA can turn a passing-AA element into a needs-fix element", () => {
+    // #767676 on white is ~4.5:1 — passes AA-normal (4.5) but fails AAA-normal (7.0)
+    const borderline: InspectedElement = { ...failing, computed: { color: "#767676", backgroundColor: "#ffffff" } };
+    render(<ContrastFix element={borderline} auditId="audit-1" onApply={() => {}} />);
+    expect(screen.queryByText(/Suggested fix/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("target-level-aaa"));
+
+    expect(screen.getByText(/Suggested fix/)).toBeInTheDocument();
+  });
+
+  it("verdict label reflects the selected large-text target, not just AA-normal (regression: contrastVerdict ignored largeText)", () => {
+    // #767676 on white is ~4.54:1 — passes AAA at large text (needs 4.5) but
+    // only AA at normal text (needs 7.0 for AAA-normal). If the verdict were
+    // computed with largeText always false, the label would wrongly say
+    // "passes AA" even after the user selects AAA + Large text.
+    const borderline: InspectedElement = { ...failing, computed: { color: "#767676", backgroundColor: "#ffffff" } };
+    render(<ContrastFix element={borderline} auditId="audit-1" onApply={() => {}} />);
+
+    fireEvent.click(screen.getByTestId("target-level-aaa"));
+    fireEvent.click(screen.getByTestId("target-size-large"));
+
+    expect(screen.getByTestId("contrast-verdict")).toHaveTextContent("passes AAA");
+  });
+
+  it("switching to large text lowers the required ratio (fewer fixes needed)", () => {
+    // ~4.0:1 — fails AA-normal (4.5) but passes AA-large (3.0)
+    const midGray: InspectedElement = { ...failing, computed: { color: "#7f7f7f", backgroundColor: "#ffffff" } };
+    render(<ContrastFix element={midGray} auditId="audit-1" onApply={() => {}} />);
+    expect(screen.getByText(/Suggested fix/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("target-size-large"));
+
+    expect(screen.queryByText(/Suggested fix/)).not.toBeInTheDocument();
+  });
+
+  it("hides the Flag finding button entirely when no auditId is available (disconnected fixture route)", () => {
+    render(<ContrastFix element={failing} onApply={() => {}} />);
+    expect(screen.queryByText("Flag finding")).not.toBeInTheDocument();
+  });
+
+  it("hides the Flag finding button when the element already passes AA (nothing real to flag)", () => {
+    const passing: InspectedElement = { ...failing, computed: { color: "#000000", backgroundColor: "#ffffff" } };
+    render(<ContrastFix element={passing} auditId="audit-1" onApply={() => {}} />);
+    expect(screen.queryByText("Flag finding")).not.toBeInTheDocument();
+  });
+
+  it("regression: a non-text element that passes the real 3:1 floor is NOT reported as failing at the default AA/normal-text target", () => {
+    // #888888 on white is ~3.54:1 — genuinely passes WCAG 1.4.11's flat 3:1
+    // floor, but fails the 4.5:1 AA-normal TEXT floor. Before this fix,
+    // requiredContrastRatio ignored hasText, so a non-text element was held
+    // to the text threshold and reported a real pass as a failure.
+    const nonText: InspectedElement = {
+      ...failing,
+      computed: { color: "#888888", backgroundColor: "#ffffff" },
+      hasText: false,
+    };
+    render(<ContrastFix element={nonText} auditId="audit-1" onApply={() => {}} />);
+    expect(screen.getByTestId("contrast-verdict")).toHaveTextContent("passes");
+    expect(screen.queryByText(/Suggested fix/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Flag finding")).not.toBeInTheDocument();
+  });
+
+  it("regression: the AA/AAA + text-size selector is hidden for non-text elements (1.4.11 has no tiers)", () => {
+    const nonText: InspectedElement = { ...failing, hasText: false };
+    render(<ContrastFix element={nonText} auditId="audit-1" onApply={() => {}} />);
+    expect(screen.queryByTestId("target-level-aa")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("target-level-aaa")).not.toBeInTheDocument();
+    expect(screen.getByTestId("non-text-target-note")).toBeInTheDocument();
+  });
+
+  it("regression: the criterion chip reflects the actual selected target (1.4.6 at AAA, not a static 1.4.3/1.4.11 pair)", () => {
+    render(<ContrastFix element={failing} auditId="audit-1" onApply={() => {}} />);
+    expect(screen.getByText("1.4.3")).toBeInTheDocument();
+    expect(screen.queryByText("1.4.11")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("target-level-aaa"));
+    expect(screen.getByText("1.4.6")).toBeInTheDocument();
+    expect(screen.queryByText("1.4.3")).not.toBeInTheDocument();
+  });
+
+  it("regression: an AAA-only failure (passes AA) hides Flag finding at the AA target but shows it once AAA is selected", () => {
+    // #767676 on white is ~4.54:1 — passes AA-normal (4.5) but fails
+    // AAA-normal (7.0). Before this fix, the button's visibility was gated
+    // on !verdict.passesAA (always AA), so it never appeared for this pair
+    // no matter what target the user had selected.
+    const aaaOnlyFailure: InspectedElement = {
+      ...failing,
+      computed: { color: "#767676", backgroundColor: "#ffffff" },
+    };
+    render(<ContrastFix element={aaaOnlyFailure} auditId="audit-1" onApply={() => {}} />);
+    expect(screen.queryByText("Flag finding")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("target-level-aaa"));
+
+    expect(screen.getByText("Flag finding")).toBeInTheDocument();
+  });
+
+  it("regression: Flag finding posts the selected level/largeText target", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({ ok: true }) })
+    );
+    const aaaOnlyFailure: InspectedElement = {
+      ...failing,
+      computed: { color: "#767676", backgroundColor: "#ffffff" },
+    };
+    render(<ContrastFix element={aaaOnlyFailure} auditId="audit-1" onApply={() => {}} />);
+    fireEvent.click(screen.getByTestId("target-level-aaa"));
+    fireEvent.click(screen.getByText("Flag finding"));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+
+    const [, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse(options.body as string);
+    expect(body.level).toBe("AAA");
+    expect(body.largeText).toBe(false);
+  });
+
+  it("Flag finding posts to the contrast-finding route with hasText/pageUrl/viewport and shows a success toast", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: async () => ({ ok: true, ratio: 4.29 }),
+      })
+    );
+
+    render(
+      <ContrastFix
+        element={failing}
+        auditId="audit-1"
+        pageUrl="https://example.com/"
+        viewport={{ width: 1440, height: 900 }}
+        onApply={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByText("Flag finding"));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/audits/audit-1/contrast-finding",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
+      })
+    );
+    const [, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse(options.body as string);
+    expect(body.selector).toBe("#cta");
+    expect(body.fg).toBe("#7a7a7a");
+    expect(body.bg).toBe("#ffffff");
+    expect(body.bbox).toEqual(failing.bbox);
+    expect(body.hasText).toBe(true);
+    expect(body.pageUrl).toBe("https://example.com/");
+    expect(body.viewport).toEqual({ width: 1440, height: 900 });
+  });
+
+  it("Flag finding shows an error toast on failure and does not disable re-flagging", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({ error: "boom" }) })
+    );
+
+    render(<ContrastFix element={failing} auditId="audit-1" onApply={() => {}} />);
+    fireEvent.click(screen.getByText("Flag finding"));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(screen.getByText("Flag finding")).not.toBeDisabled();
+  });
+
+  it("disables re-flagging the same selector after a successful flag (client-side only)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({ success: true }) })
+    );
+
+    render(<ContrastFix element={failing} auditId="audit-1" onApply={() => {}} />);
+    fireEvent.click(screen.getByText("Flag finding"));
+
+    await waitFor(() => expect(screen.getByText("Flagged")).toBeInTheDocument());
+    expect(screen.getByText("Flagged")).toBeDisabled();
   });
 });

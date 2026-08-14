@@ -165,6 +165,53 @@ export async function insertFindings(
   if (error) throw error;
 }
 
+/**
+ * Resolve the audit_pages row id for a given audit + page URL — used by the
+ * Contrast Lab finding route, which only knows the page URL the Explore
+ * panel is showing, not the DB page id. Falls back to the audit's first
+ * scanned page when no exact URL match exists (still lets a manual flag
+ * attach to *some* page rather than failing outright).
+ */
+/** Loosely normalize a URL for cross-scan matching: scheme (http/https) and
+ * a leading "www." are both common redirect artifacts between when a page
+ * was crawled and when Contrast Lab re-navigates to it later, so neither
+ * should cause an otherwise-identical page to be treated as unmatched. */
+function normalizeUrlForMatch(raw: string): string {
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.replace(/^www\./, "");
+    const path = url.pathname.replace(/\/$/, "");
+    return `${host}${path}${url.search}`.toLowerCase();
+  } catch {
+    return raw.toLowerCase();
+  }
+}
+
+export async function getAuditPageId(
+  auditId: string,
+  pageUrl?: string
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("audit_pages")
+    .select("id, page_url")
+    .eq("audit_id", auditId)
+    .order("scanned_at", { ascending: true, nullsFirst: false })
+    .order("id", { ascending: true });
+
+  if (error) throw error;
+  if (!data || data.length === 0) return null;
+
+  if (pageUrl) {
+    const exact = data.find((p) => p.page_url === pageUrl);
+    if (exact) return exact.id;
+
+    const normalizedTarget = normalizeUrlForMatch(pageUrl);
+    const loose = data.find((p) => normalizeUrlForMatch(p.page_url) === normalizedTarget);
+    if (loose) return loose.id;
+  }
+  return data[0].id;
+}
+
 export async function getFindingsForAudit(auditId: string) {
   const { data, error } = await supabase
     .from("findings")

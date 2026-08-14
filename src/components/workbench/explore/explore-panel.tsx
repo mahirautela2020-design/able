@@ -34,11 +34,35 @@ interface AbleBridge {
 
 interface ExplorePanelProps {
   targetUrl: string;
+  auditId: string | null;
 }
 
 const FOCUS_FLAGS = { trap: false, missingStyle: false, orderMismatch: false };
 
-export function ExplorePanel({ targetUrl }: ExplorePanelProps) {
+/** The iframe's rendered box size — what the framed page's own viewport
+ * resolves to (nothing overrides it with fixed width/height attrs), so the
+ * bbox coordinates the bridge script measures and the server-side evidence
+ * capture (contrast-finding route) agree on the same coordinate space. */
+export function measureIframeViewport(
+  iframe: HTMLIFrameElement | null
+): { width: number; height: number } | null {
+  if (!iframe) return null;
+  const rect = iframe.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  return { width: Math.round(rect.width), height: Math.round(rect.height) };
+}
+
+// A relative path (the bundled demo fixture, e.g. "/explore-demo.html") is
+// already same-origin — framing it directly works with no XFO/CSP fight, and
+// routing it through /api/preview-proxy would 400 (the proxy's `new URL()`
+// call requires an absolute URL). Only an absolute http(s) URL — a real
+// audited page — needs the proxy's server-side fetch + bridge injection.
+function resolveIframeSrc(targetUrl: string): string {
+  if (targetUrl.startsWith("/")) return targetUrl;
+  return `/api/preview-proxy?url=${encodeURIComponent(targetUrl)}`;
+}
+
+export function ExplorePanel({ targetUrl, auditId }: ExplorePanelProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const [pickerActive, setPickerActive] = useState(true);
@@ -46,6 +70,7 @@ export function ExplorePanel({ targetUrl }: ExplorePanelProps) {
   const [hoverBox, setHoverBox] = useState<Bbox | null>(null);
   const [hoverLabel, setHoverLabel] = useState<string | null>(null);
   const [picked, setPicked] = useState<InspectedElement | null>(null);
+  const [pickedViewport, setPickedViewport] = useState<{ width: number; height: number } | null>(null);
 
   const [steps, setSteps] = useState<KeyboardStep[]>([]);
   const [current, setCurrent] = useState(0);
@@ -87,6 +112,7 @@ export function ExplorePanel({ targetUrl }: ExplorePanelProps) {
     (x: number, y: number) => {
       const el = getBridge()?.inspect(x, y) ?? null;
       setPicked(el);
+      setPickedViewport(measureIframeViewport(iframeRef.current));
       if (el) {
         getBridge()?.highlight(el.selector);
       }
@@ -206,7 +232,7 @@ export function ExplorePanel({ targetUrl }: ExplorePanelProps) {
       <div className="flex-1 relative min-w-0 bg-white">
         <iframe
           ref={iframeRef}
-          src={targetUrl}
+          src={resolveIframeSrc(targetUrl)}
           title="Explore preview"
           sandbox="allow-scripts allow-same-origin allow-forms"
           className={`w-full h-full border-0 ${pickerActive && !pickerDisabled ? "pointer-events-none" : ""}`}
@@ -291,7 +317,13 @@ export function ExplorePanel({ targetUrl }: ExplorePanelProps) {
 
         <section className="border-b">
           <SectionTitle title="Live contrast" />
-          <ContrastFix element={picked} onApply={handleApplyFix} />
+          <ContrastFix
+            element={picked}
+            auditId={auditId}
+            pageUrl={targetUrl}
+            viewport={pickedViewport}
+            onApply={handleApplyFix}
+          />
         </section>
 
         <section className="border-b">

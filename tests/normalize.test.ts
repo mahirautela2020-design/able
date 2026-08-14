@@ -113,6 +113,25 @@ describe("normalize", () => {
       expect(needsReview.confidence).toBeLessThanOrEqual(automated.confidence);
     });
 
+    it("regression: an automatable SC outside the tested set stays 'manual', not fabricated as passed", () => {
+      // Without a testedScIds arg, every automatable SC becomes
+      // "automated-pass" when no findings exist against it — a caller that
+      // knows only a subset of modules actually ran (e.g. "keyboard" was
+      // disabled) must not let that default leak a false pass for
+      // module-gated SCs like 2.1.1 that the disabled module would cover.
+      const matrix = computeComplianceMatrix([], ["1.4.3"]);
+      const untested = matrix.sc.find((s) => s.id === "2.1.1");
+      const tested = matrix.sc.find((s) => s.id === "1.4.3");
+      expect(untested?.status).toBe("manual");
+      expect(tested?.status).toBe("automated-pass");
+    });
+
+    it("omitting testedScIds keeps pre-module-gating behavior (all automatable SCs eligible)", () => {
+      const matrix = computeComplianceMatrix([]);
+      const sc = matrix.sc.find((s) => s.id === "2.1.1");
+      expect(sc?.status).toBe("automated-pass");
+    });
+
     it("scoring penalizes critical more than minor", () => {
       const critical = makeFinding({
         severity: "critical",
