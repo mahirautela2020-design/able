@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { authHeaders } from "@/lib/supabase/client";
 
 interface SrPreviewProps {
@@ -9,7 +9,10 @@ interface SrPreviewProps {
 
 /**
  * SR Preview panel — shows the deterministic speech transcript
- * generated from the AX tree for the first audited page.
+ * generated from the AX tree for the first audited page, with an
+ * optional "Read aloud" using the browser's native Web Speech API
+ * (no server/TTS dependency — unsupported browsers just don't see the
+ * controls).
  */
 export function SrPreview({ auditId }: SrPreviewProps) {
   const [open, setOpen] = useState(false);
@@ -17,6 +20,22 @@ export function SrPreview({ auditId }: SrPreviewProps) {
   const [lines, setLines] = useState<string[] | null>(null);
   const [error, setError] = useState(false);
   const [scrollIndex, setScrollIndex] = useState(0);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
+
+  const speechSupported =
+    typeof window !== "undefined" && "speechSynthesis" in window;
+
+  const stopSpeaking = useCallback(() => {
+    if (speechSupported) window.speechSynthesis.cancel();
+    setIsSpeaking(false);
+    setIsPaused(false);
+    setSpeakingIndex(null);
+  }, [speechSupported]);
+
+  // Never leave speech running once this panel unmounts.
+  useEffect(() => stopSpeaking, [stopSpeaking]);
 
   async function fetchTranscript() {
     setLoading(true);
@@ -36,6 +55,7 @@ export function SrPreview({ auditId }: SrPreviewProps) {
 
   async function handleToggle() {
     const next = !open;
+    if (!next) stopSpeaking();
     setOpen(next);
     if (next && lines === null && !loading) {
       await fetchTranscript();
@@ -43,7 +63,50 @@ export function SrPreview({ auditId }: SrPreviewProps) {
   }
 
   function handleReadFromTop() {
+    stopSpeaking();
     setScrollIndex(0);
+  }
+
+  function speakFrom(startIndex: number) {
+    if (!speechSupported || !lines || lines.length === 0) return;
+    window.speechSynthesis.cancel();
+    setIsSpeaking(true);
+    setIsPaused(false);
+
+    let i = startIndex;
+    const speakNext = () => {
+      if (!lines || i >= lines.length) {
+        setIsSpeaking(false);
+        setSpeakingIndex(null);
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(lines[i]);
+      setSpeakingIndex(i);
+      utterance.onend = () => {
+        i += 1;
+        speakNext();
+      };
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        setSpeakingIndex(null);
+      };
+      window.speechSynthesis.speak(utterance);
+    };
+    speakNext();
+  }
+
+  function handlePlayPause() {
+    if (isSpeaking && !isPaused) {
+      window.speechSynthesis.pause();
+      setIsPaused(true);
+      return;
+    }
+    if (isPaused) {
+      window.speechSynthesis.resume();
+      setIsPaused(false);
+      return;
+    }
+    speakFrom(speakingIndex ?? scrollIndex);
   }
 
   return (
@@ -55,7 +118,7 @@ export function SrPreview({ auditId }: SrPreviewProps) {
       >
         <span className="text-sm font-medium">SR Preview (AX tree)</span>
         <span className="text-xs text-muted-foreground">
-          {open ? "\u25b4 collapse" : "\u25be show transcript"}
+          {open ? "▴ collapse" : "▾ show transcript"}
         </span>
       </button>
 
@@ -79,26 +142,56 @@ export function SrPreview({ auditId }: SrPreviewProps) {
 
           {!loading && !error && lines !== null && lines.length > 0 && (
             <>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <span className="text-xs text-muted-foreground">
                   {lines.length} announcements
                 </span>
-                <button
-                  onClick={handleReadFromTop}
-                  className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
-                >
-                  Read from top
-                </button>
+                <div className="flex items-center gap-2">
+                  {speechSupported && (
+                    <>
+                      <button
+                        data-testid="sr-read-aloud"
+                        onClick={handlePlayPause}
+                        className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
+                      >
+                        {isSpeaking && !isPaused ? "Pause" : isPaused ? "Resume" : "Read aloud"}
+                      </button>
+                      {isSpeaking && (
+                        <button
+                          data-testid="sr-stop-reading"
+                          onClick={stopSpeaking}
+                          className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
+                        >
+                          Stop
+                        </button>
+                      )}
+                    </>
+                  )}
+                  <button
+                    onClick={handleReadFromTop}
+                    className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
+                  >
+                    Read from top
+                  </button>
+                </div>
               </div>
               <ol
                 className="space-y-0.5 font-mono text-[11px] list-decimal list-inside"
                 start={scrollIndex + 1}
               >
-                {lines.slice(scrollIndex).map((line, i) => (
-                  <li key={scrollIndex + i} className="py-0.5 border-b border-border/30">
-                    {line}
-                  </li>
-                ))}
+                {lines.slice(scrollIndex).map((line, i) => {
+                  const absoluteIndex = scrollIndex + i;
+                  return (
+                    <li
+                      key={absoluteIndex}
+                      className={`py-0.5 border-b border-border/30 ${
+                        speakingIndex === absoluteIndex ? "bg-accent/60 rounded" : ""
+                      }`}
+                    >
+                      {line}
+                    </li>
+                  );
+                })}
               </ol>
             </>
           )}
