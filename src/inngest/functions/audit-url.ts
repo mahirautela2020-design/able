@@ -44,7 +44,29 @@ async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T | "TI
 }
 
 export const auditUrl = inngest.createFunction(
-  { id: "audit-url", concurrency: 1, retries: 1, triggers: [{ event: "audit/url" }] },
+  {
+    id: "audit-url",
+    concurrency: 1,
+    retries: 1,
+    triggers: [{ event: "audit/url" }],
+    // Runs once all retries are exhausted (e.g. connection refused/timeout
+    // mid-scan, or the worker crashing) — without this, the audit row is
+    // left stuck at status="running" forever with no automatic recovery.
+    onFailure: async ({ event, error }) => {
+      const originalEvent = (
+        event as { data?: { event?: { data?: { auditId?: string } } } }
+      )?.data?.event;
+      const auditId = originalEvent?.data?.auditId;
+      if (!auditId) return;
+
+      await updateAuditStatus(auditId, "failed", {
+        error_code: "SCAN_FAILED",
+        error_detail: error instanceof Error ? error.message : String(error),
+      }).catch(() => {
+        // best-effort — nothing further to do if this write also fails
+      });
+    },
+  },
   async ({ event, step }) => {
     const { auditId, url } = event.data as { auditId: string; url: string };
 
