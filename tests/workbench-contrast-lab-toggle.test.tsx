@@ -36,7 +36,7 @@ describe("Workbench — Contrast Lab toggle (real workbench, not the disconnecte
     expect(screen.getByText("Element Inspector")).toBeInTheDocument();
   });
 
-  it("toggling back to 'Preview' restores the live iframe", () => {
+  it("switching back to 'Checklist' mode restores the live iframe", () => {
     stubFetch();
     render(
       <Workbench auditId="audit-1" targetUrl="https://example.com" auditStatus="complete" findings={[]} />
@@ -45,7 +45,7 @@ describe("Workbench — Contrast Lab toggle (real workbench, not the disconnecte
     fireEvent.click(screen.getByText("Contrast Lab"));
     expect(screen.getByTitle("Explore preview")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Preview"));
+    fireEvent.click(screen.getByText("Checklist"));
     expect(screen.getByTitle("Live preview of https://example.com")).toBeInTheDocument();
   });
 });
