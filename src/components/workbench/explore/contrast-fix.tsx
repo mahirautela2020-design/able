@@ -50,7 +50,7 @@ export function ContrastFix({
     );
   }
 
-  const verdict = contrastVerdict(ratio);
+  const verdict = contrastVerdict(ratio, largeText);
   const target = requiredContrastRatio(level, largeText);
   const meetsTarget = ratio >= target;
   const fix = meetsTarget ? null : suggestFix(fg, bg, target);

@@ -77,6 +77,40 @@ describe("captureAxTree — rect/domTag enrichment", () => {
     expect(nodes[0].domTag).toBeNull();
   });
 
+  it("keeps a real rect for a genuinely zero-height/width node (regression: falsy-zero check dropped real box-model data)", async () => {
+    const page = fakePage((method, params) => {
+      if (method === "Accessibility.getFullAXTree") {
+        return {
+          nodes: [
+            {
+              nodeId: "1",
+              role: { value: "button" },
+              name: { value: "Skip to content" },
+              backendDOMNodeId: 55,
+              properties: [{ name: "focusable", value: { value: true } }],
+            },
+          ],
+        };
+      }
+      if (method === "DOM.describeNode") {
+        expect(params).toEqual({ backendNodeId: 55 });
+        return { node: { localName: "a" } };
+      }
+      if (method === "DOM.getBoxModel") {
+        expect(params).toEqual({ backendNodeId: 55 });
+        // A real, successfully-resolved box model that happens to be
+        // zero-height (e.g. a collapsed skip-link) — not a CDP failure.
+        return { model: { content: [5, 5, 5, 5, 5, 5, 5, 5], width: 0, height: 0 } };
+      }
+      throw new Error(`unexpected CDP method: ${method}`);
+    });
+
+    const nodes = await captureAxTree(page);
+
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].rect).toEqual({ x: 5, y: 5, width: 0, height: 0 });
+  });
+
   it("skips enrichment for invisible, nameless, non-focusable nodes (bounds CDP round-trips)", async () => {
     const describeNode = vi.fn();
     const page = fakePage((method) => {

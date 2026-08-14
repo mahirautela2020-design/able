@@ -61,6 +61,10 @@ vi.mock("@/lib/ssrf", () => ({ sanitizeUrl, validateHost }));
 const fakePage = {
   goto: vi.fn(async () => {}),
   screenshot: vi.fn(async () => Buffer.from("fake-screenshot")),
+  // Default: agrees with the client-posted hasText in `failingBody` (true)
+  // so existing tests are unaffected; individual tests override this to
+  // exercise the server-side verification.
+  evaluate: vi.fn(async () => true),
 };
 
 vi.mock("@/engine/browser", () => ({
@@ -139,12 +143,14 @@ describe("POST /api/audits/[id]/contrast-finding", () => {
     expect(insertFindings).toHaveBeenCalledTimes(1);
   });
 
-  it("picks 1.4.3 when hasText is true, 1.4.11 when false — trusts the client's hasText flag directly", async () => {
+  it("picks 1.4.3 when hasText is true, 1.4.11 when false — server-verified against the live DOM, agreeing with the client here", async () => {
+    fakePage.evaluate.mockResolvedValueOnce(true);
     await POST(makeRequest(failingBody), { params: Promise.resolve({ id: "audit-1" }) });
     expect(insertFindings.mock.calls[0][0][0].wcag_criterion).toBe("1.4.3");
 
     vi.clearAllMocks();
     getAuditPageId.mockResolvedValue("page-1");
+    fakePage.evaluate.mockResolvedValueOnce(false);
     await POST(makeRequest({ ...failingBody, hasText: false }), { params: Promise.resolve({ id: "audit-1" }) });
     expect(insertFindings.mock.calls[0][0][0].wcag_criterion).toBe("1.4.11");
   });
@@ -299,6 +305,36 @@ describe("POST /api/audits/[id]/contrast-finding", () => {
     it("still returns 404 for a genuinely missing audit when the caller has a valid session", async () => {
       const res = await POST(makeRequest(failingBody), { params: Promise.resolve({ id: "missing-audit" }) });
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe("hasText verification (regression: client-posted hasText was trusted with no cross-check)", () => {
+    it("overrides a mismatched client hasText with the real DOM textContent check (client lies true, DOM says false)", async () => {
+      fakePage.evaluate.mockResolvedValueOnce(false);
+      await POST(
+        makeRequest({ ...failingBody, hasText: true, selector: "#icon-btn" }),
+        { params: Promise.resolve({ id: "audit-1" }) }
+      );
+      expect(insertFindings.mock.calls[0][0][0].wcag_criterion).toBe("1.4.11");
+      expect(fakePage.evaluate).toHaveBeenCalledWith(expect.any(Function), "#icon-btn");
+    });
+
+    it("overrides a mismatched client hasText the other direction (client lies false, DOM says true)", async () => {
+      fakePage.evaluate.mockResolvedValueOnce(true);
+      await POST(
+        makeRequest({ ...failingBody, hasText: false }),
+        { params: Promise.resolve({ id: "audit-1" }) }
+      );
+      expect(insertFindings.mock.calls[0][0][0].wcag_criterion).toBe("1.4.3");
+    });
+
+    it("falls back to the client-supplied hasText when the live DOM check itself fails (best-effort)", async () => {
+      fakePage.evaluate.mockRejectedValueOnce(new Error("selector not found"));
+      await POST(
+        makeRequest({ ...failingBody, hasText: true }),
+        { params: Promise.resolve({ id: "audit-1" }) }
+      );
+      expect(insertFindings.mock.calls[0][0][0].wcag_criterion).toBe("1.4.3");
     });
   });
 });
