@@ -199,11 +199,21 @@ export function ExplorePanel({ targetUrl, auditId }: ExplorePanelProps) {
       body: JSON.stringify({ url: targetUrl }),
     })
       .then(async (res) => {
-        const json = await res.json();
+        // res.ok must be checked BEFORE parsing: a platform-level function
+        // crash/timeout (e.g. Chromium failing to launch on a constrained
+        // serverless runtime) returns a non-JSON error page, not this
+        // route's own JSON error shape — parsing that unconditionally threw
+        // a raw "Unexpected token..." message straight into the UI.
         if (!res.ok) {
-          throw new Error(json.error || `Snapshot failed (${res.status})`);
+          const message = await res
+            .json()
+            .then((j) => j.error)
+            .catch(() => null);
+          throw new Error(message || `Snapshot failed (${res.status})`);
         }
-        return json;
+        return res.json().catch(() => {
+          throw new Error("Snapshot failed (invalid response)");
+        });
       })
       .then((json) => {
         if (!cancelled) setAxSnapshot(json.snapshot ?? null);
