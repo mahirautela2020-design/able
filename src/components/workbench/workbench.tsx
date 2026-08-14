@@ -231,6 +231,18 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
     return Math.max(5, Math.round(perPage * remaining));
   }, [status, progress, now, startedAt]);
 
+  const percentComplete = useMemo(() => {
+    if (
+      !progress ||
+      typeof progress.pagesDone !== "number" ||
+      typeof progress.pagesTotal !== "number" ||
+      progress.pagesTotal < 1
+    ) {
+      return null;
+    }
+    return Math.min(100, Math.round((progress.pagesDone / progress.pagesTotal) * 100));
+  }, [progress]);
+
   /** Download the 16:9 PDF with the session token (endpoint is auth-gated). */
   async function handleDownloadPdf() {
     setDownloadingPdf(true);
@@ -342,8 +354,8 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
                 </div>
                 <p className="text-[11px] text-muted-foreground">
                   {progress.pagesDone >= 1
-                    ? `Scanning page ${progress.pagesDone} of ${progress.pagesTotal}${
-                        etaSeconds !== null ? ` · ~${etaSeconds}s left` : ""
+                    ? `${percentComplete ?? 0}% · Scanning page ${progress.pagesDone} of ${progress.pagesTotal}${
+                        etaSeconds !== null ? ` · ${formatEta(etaSeconds)}` : ""
                       }`
                     : "Starting…"}
                 </p>
@@ -710,6 +722,13 @@ function StatusDot({ status }: { status: string }) {
       title={statusLabel(status)}
     />
   );
+}
+
+/** Formats a whole number of seconds as a minute-scale ETA string. */
+export function formatEta(seconds: number): string {
+  if (seconds < 60) return "<1 min left";
+  const minutes = Math.round(seconds / 60);
+  return `~${minutes} min left`;
 }
 
 function statusLabel(status: string): string {
