@@ -281,6 +281,50 @@ export async function cleanupExpiredData(): Promise<{
 }
 
 /**
+ * Recover audits whose execution was lost — a worker crash/restart, or a
+ * network call that hangs without ever timing out (e.g. connecting to a
+ * closed port) — and which the Inngest function therefore never got a
+ * chance to mark "failed" itself. Anything stuck at status="running" past
+ * `maxMinutes` (default STALE_AUDIT_MINUTES, well beyond
+ * PAGE_SCAN_TIMEOUT_MS × MAX_PAGES worst case) is marked "failed" with
+ * error_code "STALE_EXECUTION". Pass `auditId` to scope the check to one
+ * row (used on each workbench poll); omit it for a system-wide sweep (used
+ * by the retention cron) so audits nobody is actively polling still recover.
+ * Returns the ids that were marked failed.
+ */
+export async function failStaleRunningAudits(
+  opts: { auditId?: string; maxMinutes?: number } = {}
+): Promise<string[]> {
+  const maxMinutes =
+    opts.maxMinutes ?? parseInt(process.env.STALE_AUDIT_MINUTES || "10", 10);
+  const cutoff = new Date(Date.now() - maxMinutes * 60_000).toISOString();
+
+  let query = supabase
+    .from("audits")
+    .select("id")
+    .eq("status", "running")
+    .lt("created_at", cutoff);
+
+  if (opts.auditId) {
+    query = query.eq("id", opts.auditId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const ids = ((data as { id: string }[] | null) ?? []).map((row) => row.id);
+
+  for (const id of ids) {
+    await updateAuditStatus(id, "failed", {
+      error_code: "STALE_EXECUTION",
+      error_detail: `No progress for over ${maxMinutes} minutes — execution likely lost (worker crash/restart) or a network operation hung without timing out.`,
+    });
+  }
+
+  return ids;
+}
+
+/**
  * Delete an audit and everything tied to it (pages, findings via cascade,
  * and the evidence storage folder). Returns true if the audit existed.
  */
