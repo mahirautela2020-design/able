@@ -81,6 +81,8 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [mainMode, setMainMode] = useState<"preview" | "explore" | "screen-reader">("preview");
   const [showScreenshot, setShowScreenshot] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [hasDownloadedPdf, setHasDownloadedPdf] = useState(false);
+  const [rerunWarning, setRerunWarning] = useState<{ urlOverride?: string } | null>(null);
   const [editingUrl, setEditingUrl] = useState(false);
   const [urlDraft, setUrlDraft] = useState(targetUrl);
   const [rerunning, setRerunning] = useState(false);
@@ -271,11 +273,24 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      setHasDownloadedPdf(true);
     } catch (e) {
       console.error("PDF download failed:", e);
     } finally {
       setDownloadingPdf(false);
     }
+  }
+
+  // Gate in front of handleRerun: a completed audit's results are only
+  // reachable by revisiting this exact URL — starting a new audit doesn't
+  // delete anything, but the user can lose track of it. Skipped once
+  // they've downloaded a PDF, or if there's nothing finished to lose yet.
+  function requestRerun(urlOverride?: string) {
+    if (status === "complete" && !hasDownloadedPdf) {
+      setRerunWarning({ urlOverride });
+      return;
+    }
+    handleRerun(urlOverride);
   }
 
   // Re-run: POST the same (or edited) URL to start a fresh audit, then
@@ -302,7 +317,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   }
 
   return (
-    <div className="flex h-full border rounded-lg overflow-hidden bg-background">
+    <div className="relative flex h-full border rounded-lg overflow-hidden bg-background">
       {/* ── LEFT: WCAG checklist ── */}
       <aside className="w-[320px] shrink-0 border-r flex flex-col bg-muted/20">
         <div className="p-3 border-b">
@@ -525,7 +540,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
                 onSubmit={(e) => {
                   e.preventDefault();
                   setEditingUrl(false);
-                  if (urlDraft.trim() !== targetUrl) handleRerun();
+                  if (urlDraft.trim() !== targetUrl) requestRerun();
                 }}
               >
                 <input
@@ -586,7 +601,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
             </button>
             {/* Re-run always available (esp. after a failure) */}
             <button
-              onClick={() => handleRerun()}
+              onClick={() => requestRerun()}
               disabled={rerunning || status === "running" || status === "queued"}
               className="text-xs px-2.5 py-1 rounded-md border hover:bg-accent/50 transition-colors disabled:opacity-50"
             >
@@ -742,6 +757,53 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           </div>
         )}
       </main>
+
+      {/* Warn before a completed audit's results become hard to find again
+          (starting a new audit doesn't delete anything, but only this
+          audit's own URL can get back to it). Skipped once a PDF has been
+          downloaded this session, or for an in-progress/failed audit. */}
+      {rerunWarning && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40">
+          <Card className="w-80">
+            <CardContent className="p-4 space-y-3">
+              <p className="text-sm font-medium">Download this report before starting a new audit?</p>
+              <p className="text-xs text-muted-foreground">
+                This audit&apos;s results aren&apos;t deleted, but you&apos;ll need this page&apos;s link to
+                see them again once a new audit replaces it here.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setRerunWarning(null)}
+                  className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    const { urlOverride } = rerunWarning;
+                    await handleDownloadPdf();
+                    setRerunWarning(null);
+                    handleRerun(urlOverride);
+                  }}
+                  className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
+                >
+                  Download PDF
+                </button>
+                <button
+                  onClick={() => {
+                    const { urlOverride } = rerunWarning;
+                    setRerunWarning(null);
+                    handleRerun(urlOverride);
+                  }}
+                  className="text-xs px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+                >
+                  Continue anyway
+                </button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
