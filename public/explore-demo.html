@@ -193,6 +193,24 @@
         document.body.style.filter = (!filter || filter === "none") ? "" : filter;
         return true;
       }
+      function applyAccessibilityProfile(settings) {
+        settings = settings || {};
+        document.body.style.filter = (!settings.filter || settings.filter === "none") ? "" : settings.filter;
+        document.documentElement.style.fontSize = settings.textScale ? (settings.textScale + "%") : "";
+        var styleId = "__able-a11y-style";
+        var existing = document.getElementById(styleId);
+        if (settings.reducedMotion) {
+          if (!existing) {
+            var style = document.createElement("style");
+            style.id = styleId;
+            style.textContent = "*,*::before,*::after{animation-play-state:paused!important;transition:none!important}";
+            document.head.appendChild(style);
+          }
+        } else if (existing) {
+          existing.remove();
+        }
+        return true;
+      }
 
       window.__ableInspect = {
         inspect: inspect,
@@ -203,6 +221,7 @@
         patch: patch,
         focusEl: focusEl,
         setFilter: setFilter,
+        applyAccessibilityProfile: applyAccessibilityProfile,
         clearHighlight: clearHighlight
       };
 
@@ -233,6 +252,9 @@
             break;
           case "able:set-filter":
             window.parent && window.parent.postMessage({ type: "able:set-filter:result", ok: setFilter(msg.filter) }, "*");
+            break;
+          case "able:apply-a11y-profile":
+            window.parent && window.parent.postMessage({ type: "able:apply-a11y-profile:result", ok: applyAccessibilityProfile(msg.settings) }, "*");
             break;
         }
       });

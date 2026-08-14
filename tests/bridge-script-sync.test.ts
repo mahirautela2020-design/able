@@ -34,6 +34,7 @@ describe("bridge-script sync guard", () => {
       "patch",
       "focusEl",
       "setFilter",
+      "applyAccessibilityProfile",
       "clearHighlight",
     ]) {
       expect(ABLE_INSPECT_BRIDGE_SCRIPT).toContain(`${fn}:`);
