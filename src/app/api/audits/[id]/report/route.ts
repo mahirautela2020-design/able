@@ -12,20 +12,39 @@ export async function GET(
     // Isolation: reports are private. Signed-in owners may read; anonymous
     // requesters may read only when their IP matches the audit's creator IP
     // (the same rule the audits list uses), so a free-tier user can view
-    // their own result without an account.
-    const auth = await requireSession(request);
-    if (!auth.ok) {
-      const auditRow = await getAudit(id);
-      const reqIp = getClientIp(request);
-      if (!reqIp || auditRow.created_ip !== reqIp) {
-        return Response.json(
-          { error: "Missing or invalid authorization header" },
-          { status: 401 }
-        );
-      }
+    // their own result without an account. Owner-scoped, not just
+    // "any valid session" — matches the check in
+    // /api/audits/[id]/contrast-finding: a missing audit and an audit that
+    // exists but isn't yours get the SAME 401 so a caller can't enumerate
+    // valid audit ids by probing for 404 vs 401.
+    let auditRow: Awaited<ReturnType<typeof getAudit>> | null = null;
+    try {
+      auditRow = await getAudit(id);
+    } catch {
+      auditRow = null;
+    }
+    if (!auditRow) {
+      return Response.json(
+        { error: "Missing or invalid authorization header" },
+        { status: 401 }
+      );
     }
 
-    const audit = await getAudit(id);
+    const auth = await requireSession(request);
+    const reqIp = getClientIp(request);
+    const isOwner = auth.ok
+      ? auditRow.created_by
+        ? auditRow.created_by === auth.userId
+        : !!reqIp && auditRow.created_ip === reqIp
+      : !!reqIp && auditRow.created_ip === reqIp;
+    if (!isOwner) {
+      return Response.json(
+        { error: "Missing or invalid authorization header" },
+        { status: 401 }
+      );
+    }
+
+    const audit = auditRow;
     const findings = await getFindingsForAudit(id);
 
     const signedFindings = await Promise.all(

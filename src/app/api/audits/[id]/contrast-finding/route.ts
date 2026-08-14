@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import { withPage } from "@/engine/browser";
+import { waitForPageSettle } from "@/engine/settle";
 import { getAudit, getAuditPageId, insertFindings, uploadEvidence } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
 import { getClientIp } from "@/lib/http";
@@ -193,6 +194,13 @@ export async function POST(
     const { screenshot, domHasText } = await withPage(
       async (page) => {
         await page.goto(parsedUrl.href, { waitUntil: "domcontentloaded", timeout: 15_000 });
+        // Settle animations/consent banners/fonts before capturing — without
+        // this, a re-navigated evidence screenshot can catch the page
+        // mid-transition (a cookie banner still animating in, a webfont not
+        // yet swapped), producing a crop that doesn't match what the user
+        // saw in Contrast Lab. Best-effort: waitForPageSettle already
+        // degrades gracefully internally on any single step's failure.
+        await waitForPageSettle(page, { networkidleTimedOut: false });
         const domHasText = await page
           .evaluate((sel: string) => {
             const el = document.querySelector(sel);

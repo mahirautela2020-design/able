@@ -10,17 +10,36 @@ export async function GET(
   try {
     const { id } = await params;
 
-    // Auth: same pattern as /api/audits/[id]/report (R5 mitigation)
+    // Owner-scoped auth: same real ownership check as /api/audits/[id]/report
+    // and /api/audits/[id]/contrast-finding — a valid session alone is not
+    // enough, it must belong to THIS audit's owner (or, for anonymous
+    // owners, match the creator IP). Missing audit and not-owner get the
+    // same 401 to avoid ID-enumeration.
+    let auditRow: Awaited<ReturnType<typeof getAudit>> | null = null;
+    try {
+      auditRow = await getAudit(id);
+    } catch {
+      auditRow = null;
+    }
+    if (!auditRow) {
+      return Response.json(
+        { error: "Missing or invalid authorization header" },
+        { status: 401 }
+      );
+    }
+
     const auth = await requireSession(request);
-    if (!auth.ok) {
-      const auditRow = await getAudit(id);
-      const reqIp = getClientIp(request);
-      if (!reqIp || auditRow.created_ip !== reqIp) {
-        return Response.json(
-          { error: "Missing or invalid authorization header" },
-          { status: 401 }
-        );
-      }
+    const reqIp = getClientIp(request);
+    const isOwner = auth.ok
+      ? auditRow.created_by
+        ? auditRow.created_by === auth.userId
+        : !!reqIp && auditRow.created_ip === reqIp
+      : !!reqIp && auditRow.created_ip === reqIp;
+    if (!isOwner) {
+      return Response.json(
+        { error: "Missing or invalid authorization header" },
+        { status: 401 }
+      );
     }
 
     // Fetch the AX transcript evidence for page 0
