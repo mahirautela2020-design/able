@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getWcagRegistry, type WcagSuccessCriterion } from "@/engine/wcag-registry";
 import { supabase, authHeaders } from "@/lib/supabase/client";
+import { ExplorePanel } from "@/components/workbench/explore/explore-panel";
 
 export interface WorkbenchFinding {
   id: string;
@@ -76,6 +77,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [levelFilter, setLevelFilter] = useState<"ALL" | "A" | "AA" | "AAA">("ALL");
   const [previewKey, setPreviewKey] = useState(0); // reload iframe
   const [frameBlocked, setFrameBlocked] = useState(false);
+  const [rightMode, setRightMode] = useState<"preview" | "explore">("preview");
   const [showScreenshot, setShowScreenshot] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [editingUrl, setEditingUrl] = useState(false);
@@ -524,6 +526,17 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
             >
               Reload preview
             </button>
+            <button
+              onClick={() => setRightMode((m) => (m === "explore" ? "preview" : "explore"))}
+              className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                rightMode === "explore"
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-accent/50"
+              }`}
+              title="Click-to-inspect contrast, APCA, CVD simulation, nearest-fix suggestions"
+            >
+              {rightMode === "explore" ? "Preview" : "Contrast Lab"}
+            </button>
             {/* Re-run always available (esp. after a failure) */}
             <button
               onClick={() => handleRerun()}
@@ -545,7 +558,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
         </div>
 
         {/* Preview-blocked prompt: audit continues without preview */}
-        {frameBlocked && (
+        {frameBlocked && rightMode !== "explore" && (
           <div className="flex items-center justify-between gap-3 px-3 py-2 border-b bg-amber-50 dark:bg-amber-950/40 text-xs">
             <p className="text-amber-800 dark:text-amber-300 min-w-0">
               <span className="font-medium">{targetUrl}</span> blocks embedding — the
@@ -570,6 +583,12 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           </div>
         )}
 
+        {rightMode === "explore" ? (
+          <div className="flex-1 min-h-0 bg-white">
+            <ExplorePanel targetUrl={targetUrl} auditId={auditId} />
+          </div>
+        ) : (
+        <>
         {/* Preview: sandboxed live iframe. For sites that block embedding
             (X-Frame-Options/CSP), we PROXY the page through our own origin
             (/api/preview-proxy) — the iframe sees OUR headers, so the
@@ -642,6 +661,8 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
             </div>
           )}
         </div>
+        </>
+        )}
 
         {/* Findings drawer for selected SC */}
         {activeSc && (

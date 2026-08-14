@@ -30,6 +30,7 @@ const failing: InspectedElement = {
   ancestors: ["main"],
   bbox: { x: 0, y: 0, width: 120, height: 40 },
   computed: { color: "#7a7a7a", backgroundColor: "#ffffff" },
+  hasText: true,
 };
 
 describe("ContrastFix", () => {
@@ -96,17 +97,36 @@ describe("ContrastFix", () => {
     expect(screen.queryByText(/Suggested fix/)).not.toBeInTheDocument();
   });
 
-  it("Flag finding posts to the contrast-finding route and shows a success toast", async () => {
+  it("hides the Flag finding button entirely when no auditId is available (disconnected fixture route)", () => {
+    render(<ContrastFix element={failing} onApply={() => {}} />);
+    expect(screen.queryByText("Flag finding")).not.toBeInTheDocument();
+  });
+
+  it("hides the Flag finding button when the element already passes AA (nothing real to flag)", () => {
+    const passing: InspectedElement = { ...failing, computed: { color: "#000000", backgroundColor: "#ffffff" } };
+    render(<ContrastFix element={passing} auditId="audit-1" onApply={() => {}} />);
+    expect(screen.queryByText("Flag finding")).not.toBeInTheDocument();
+  });
+
+  it("Flag finding posts to the contrast-finding route with hasText/pageUrl/viewport and shows a success toast", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
         status: 201,
-        json: async () => ({ success: true, ratio: 4.29 }),
+        json: async () => ({ ok: true, ratio: 4.29 }),
       })
     );
 
-    render(<ContrastFix element={failing} auditId="audit-1" onApply={() => {}} />);
+    render(
+      <ContrastFix
+        element={failing}
+        auditId="audit-1"
+        pageUrl="https://example.com/"
+        viewport={{ width: 1440, height: 900 }}
+        onApply={() => {}}
+      />
+    );
     fireEvent.click(screen.getByText("Flag finding"));
 
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
@@ -124,6 +144,9 @@ describe("ContrastFix", () => {
     expect(body.fg).toBe("#7a7a7a");
     expect(body.bg).toBe("#ffffff");
     expect(body.bbox).toEqual(failing.bbox);
+    expect(body.hasText).toBe(true);
+    expect(body.pageUrl).toBe("https://example.com/");
+    expect(body.viewport).toEqual({ width: 1440, height: 900 });
   });
 
   it("Flag finding shows an error toast on failure and does not disable re-flagging", async () => {

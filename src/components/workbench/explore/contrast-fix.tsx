@@ -11,11 +11,22 @@ import type { InspectedElement } from "@/lib/explore/types";
 
 interface ContrastFixProps {
   element: InspectedElement | null;
-  auditId: string;
   onApply: (selector: string, color: string) => void;
+  /** Real audit id + page URL + iframe viewport — required for "Flag
+   * finding" to persist evidence. When auditId is null (e.g. the disconnected
+   * demo fixture route), the button is hidden rather than left to fail. */
+  auditId?: string | null;
+  pageUrl?: string;
+  viewport?: { width: number; height: number } | null;
 }
 
-export function ContrastFix({ element, auditId, onApply }: ContrastFixProps) {
+export function ContrastFix({
+  element,
+  onApply,
+  auditId = null,
+  pageUrl,
+  viewport = null,
+}: ContrastFixProps) {
   const [level, setLevel] = useState<"AA" | "AAA">("AA");
   const [largeText, setLargeText] = useState(false);
   const [flagging, setFlagging] = useState(false);
@@ -46,6 +57,7 @@ export function ContrastFix({ element, auditId, onApply }: ContrastFixProps) {
   const isFlagged = flaggedSelectors.has(element.selector);
 
   const handleFlag = async () => {
+    if (!auditId) return;
     setFlagging(true);
     try {
       const headers = await authHeaders();
@@ -53,11 +65,14 @@ export function ContrastFix({ element, auditId, onApply }: ContrastFixProps) {
         method: "POST",
         headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify({
+          pageUrl,
           selector: element.selector,
-          elementHtml: element.name ? `<span>${element.name}</span>` : undefined,
+          elementHtml: `<${element.tag}>`,
           fg,
           bg,
+          hasText: element.hasText,
           bbox: element.bbox,
+          viewport,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -157,16 +172,21 @@ export function ContrastFix({ element, auditId, onApply }: ContrastFixProps) {
         </div>
       )}
 
-      <div className="border-t pt-3">
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={flagging || isFlagged}
-          onClick={handleFlag}
-        >
-          {isFlagged ? "Flagged" : flagging ? "Flagging…" : "Flag finding"}
-        </Button>
-      </div>
+      {auditId && !verdict.passesAA && (
+        <div className="border-t pt-3">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={flagging || isFlagged}
+            onClick={handleFlag}
+          >
+            {isFlagged ? "Flagged" : flagging ? "Flagging…" : "Flag finding"}
+          </Button>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Persists this AA failure into the report with crop evidence.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
