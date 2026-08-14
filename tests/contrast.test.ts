@@ -6,6 +6,7 @@ import {
   suggestFix,
   hexToRgb,
   rgbToHex,
+  requiredContrastRatio,
 } from "@/lib/contrast";
 
 describe("contrast", () => {
@@ -63,5 +64,27 @@ describe("contrast", () => {
     expect(fix.ratio).toBeGreaterThanOrEqual(4.5);
     expect(fix.fg).toMatch(/^#[0-9a-f]{6}$/);
     expect(fix.bg).toBe("#ffffff");
+  });
+
+  it("requiredContrastRatio returns the four WCAG thresholds", () => {
+    expect(requiredContrastRatio("AA", false)).toBe(4.5);
+    expect(requiredContrastRatio("AA", true)).toBe(3.0);
+    expect(requiredContrastRatio("AAA", false)).toBe(7.0);
+    expect(requiredContrastRatio("AAA", true)).toBe(4.5);
+  });
+
+  it("suggestFix reaches AAA (7:1) when given the AAA target", () => {
+    const fix = suggestFix("#7a7a7a", "#ffffff", requiredContrastRatio("AAA", false));
+    expect(fix.ratio).toBeGreaterThanOrEqual(7.0);
+  });
+
+  it("suggestFix reaches AA-large (3:1) when given the large-text target — a smaller shift than AA-normal", () => {
+    const normalFix = suggestFix("#a0a0a0", "#ffffff", requiredContrastRatio("AA", false));
+    const largeFix = suggestFix("#a0a0a0", "#ffffff", requiredContrastRatio("AA", true));
+    expect(largeFix.ratio).toBeGreaterThanOrEqual(3.0);
+    expect(normalFix.ratio).toBeGreaterThanOrEqual(4.5);
+    // Large-text target is easier to hit, so it needs less darkening —
+    // the resulting foreground should be lighter (higher luminance).
+    expect(hexToRgb(largeFix.fg).r).toBeGreaterThan(hexToRgb(normalFix.fg).r);
   });
 });

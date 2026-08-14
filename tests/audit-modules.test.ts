@@ -8,6 +8,8 @@ import {
   totalEstimatedRuntime,
   formatRuntime,
   getRequiredModuleIds,
+  resolveModuleIds,
+  resolveModuleGates,
 } from "@/lib/audit-modules";
 
 describe("audit-modules", () => {
@@ -237,5 +239,67 @@ describe("audit-modules", () => {
   it("getModuleWcagCoverage with unknown id is graceful", () => {
     const coverage = getModuleWcagCoverage(["nonexistent"]);
     expect(coverage).toHaveLength(0);
+  });
+
+  describe("resolveModuleIds — pipeline-facing default", () => {
+    it("returns the supplied list unchanged when non-empty", () => {
+      expect(resolveModuleIds(["automated", "needs-review"])).toEqual([
+        "automated",
+        "needs-review",
+      ]);
+    });
+
+    it("falls back to the standard preset (+ required modules) when absent", () => {
+      const ids = resolveModuleIds(undefined);
+      const standard = getPresetById("standard")!;
+      for (const id of standard.moduleIds) expect(ids).toContain(id);
+      for (const id of getRequiredModuleIds()) expect(ids).toContain(id);
+    });
+
+    it("falls back to the standard default when given an empty array", () => {
+      const ids = resolveModuleIds([]);
+      expect(ids).toContain("automated");
+      expect(ids).toContain("keyboard");
+    });
+
+    it("falls back to the standard default when given null", () => {
+      const ids = resolveModuleIds(null);
+      expect(ids).toContain("automated");
+    });
+  });
+
+  describe("resolveModuleGates — which pipeline steps a module list turns on", () => {
+    it("gates keyboard behind the keyboard module", () => {
+      expect(resolveModuleGates(["automated"]).keyboard).toBe(false);
+      expect(resolveModuleGates(["automated", "keyboard"]).keyboard).toBe(true);
+    });
+
+    it("gates the AX-tree/SR capture behind aria OR screen-reader (either enables it)", () => {
+      expect(resolveModuleGates(["automated"]).axTree).toBe(false);
+      expect(resolveModuleGates(["automated", "aria"]).axTree).toBe(true);
+      expect(resolveModuleGates(["automated", "screen-reader"]).axTree).toBe(true);
+      expect(resolveModuleGates(["automated", "aria", "screen-reader"]).axTree).toBe(true);
+    });
+
+    it("gates the responsive re-scan behind the responsive module", () => {
+      expect(resolveModuleGates(["automated"]).responsive).toBe(false);
+      expect(resolveModuleGates(["automated", "responsive"]).responsive).toBe(true);
+    });
+
+    it("the full preset enables every gate", () => {
+      const full = getPresetById("full")!;
+      const gates = resolveModuleGates(full.moduleIds);
+      expect(gates.keyboard).toBe(true);
+      expect(gates.axTree).toBe(true);
+      expect(gates.responsive).toBe(true);
+    });
+
+    it("the quick preset only enables keyboard, not AX-tree or responsive", () => {
+      const quick = getPresetById("quick")!;
+      const gates = resolveModuleGates(quick.moduleIds);
+      expect(gates.keyboard).toBe(true);
+      expect(gates.axTree).toBe(false);
+      expect(gates.responsive).toBe(false);
+    });
   });
 });

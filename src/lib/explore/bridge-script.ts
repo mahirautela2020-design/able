@@ -1,45 +1,12 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Explore Demo</title>
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 0; padding: 32px; background: #ffffff; color: #111; }
-    h1 { margin-top: 0; }
-    .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
-    .bad-contrast { color: #7a7a7a; background-color: #ffffff; border: 1px solid #cccccc; padding: 8px 16px; font-size: 16px; }
-    .tiny-link { display: inline-block; width: 20px; height: 20px; font-size: 10px; line-height: 20px; text-align: center; background: #eeeeee; overflow: hidden; }
-    .status-chip { color: #000000; background-color: #009900; padding: 4px 10px; border-radius: 4px; }
-    .no-focus:focus { outline: none; }
-    .mislabeled { }
-  </style>
-</head>
-<body>
-  <main>
-    <h1>Explore demo</h1>
-
-    <div class="row">
-      <button id="cta" class="bad-contrast" data-role="button" data-name="Subscribe">Subscribe</button>
-      <img id="banner" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="280" height="80" />
-      <a id="tiny" class="tiny-link" href="#tiny" data-role="link" data-name="x">x</a>
-      <label>Search</label>
-      <input id="search" type="text" data-role="textbox" data-name="Search" />
-      <span id="chip" class="status-chip" data-role="status" data-name="Available">Available</span>
-    </div>
-
-    <!-- tab-order quirk: DOM order (Third, First, Second) differs from reading order -->
-    <div class="row">
-      <a id="tab3" class="no-focus" href="#tab3">Third</a>
-      <a id="tab1" href="#tab1">First</a>
-      <a id="tab2" href="#tab2">Second</a>
-    </div>
-  </main>
-
-  <script>
+// The __ableInspect bridge, extracted verbatim from public/explore-demo.html
+// (and its test twin tests/fixtures/explore-demo.html) so preview-proxy can
+// inject the same script into a real proxied page. Keep this string
+// byte-identical to the inline <script> body in both HTML files — see
+// tests/bridge-script-sync.test.ts, which guards against drift.
+export const ABLE_INSPECT_BRIDGE_SCRIPT = `
     (function () {
       function rgbToHex(str) {
-        var m = str.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        var m = str.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
         if (!m) return "#000000";
         function to2(n) { return Number(n).toString(16).padStart(2, "0"); }
         return "#" + to2(m[1]) + to2(m[2]) + to2(m[3]);
@@ -81,7 +48,7 @@
         if (el.id) return "#" + el.id;
         var sel = el.tagName.toLowerCase();
         if (el.className && typeof el.className === "string") {
-          var cls = el.className.trim().split(/\s+/).filter(Boolean).slice(0, 1);
+          var cls = el.className.trim().split(/\\s+/).filter(Boolean).slice(0, 1);
           if (cls.length) sel += "." + cls[0];
         }
         return sel;
@@ -237,6 +204,4 @@
         }
       });
     })();
-  </script>
-</body>
-</html>
+  `;
