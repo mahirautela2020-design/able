@@ -114,6 +114,75 @@ export async function GET(request: NextRequest) {
     // headers. Also strip any CSP meta tags that would re-block framing.
     html = html.replace(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>/gi, "");
 
+    // Relay same-origin fetch/XHR calls through /api/preview-proxy-asset —
+    // the page's own hydration JS still runs in-browser and calls back to
+    // its own API with relative/absolute-same-origin URLs, which the
+    // target's CORS policy rejects since the caller is now our origin, not
+    // theirs. Rewriting those specific calls to our asset relay (same-origin
+    // to the iframe, so no CORS involved) fixes client-rendered widgets that
+    // otherwise render as empty placeholders. Must run before any other
+    // script, so it's injected as the very first thing in <head>.
+    // RELAY must be an absolute URL rooted at OUR origin. A relative path
+    // like "/api/preview-proxy-asset" would resolve against the <base href>
+    // we just injected (the TARGET's origin), sending the "relayed" request
+    // straight back to the target itself — the exact CORS failure this
+    // exists to avoid.
+    const proxyOrigin = request.nextUrl.origin;
+    const assetBridge = `<script>(function(){
+      var TARGET_ORIGIN=${JSON.stringify(origin)};
+      var RELAY=${JSON.stringify(`${proxyOrigin}/api/preview-proxy-asset`)};
+      function sameOrigin(u){try{return new URL(u,TARGET_ORIGIN).origin===TARGET_ORIGIN;}catch(e){return false;}}
+      function relayUrl(u){return RELAY+"?url="+encodeURIComponent(new URL(u,TARGET_ORIGIN).toString());}
+      var origFetch=window.fetch;
+      if(origFetch){
+        window.fetch=function(input,init){
+          var url=typeof input==="string"?input:(input&&input.url);
+          if(url&&sameOrigin(url)&&url.indexOf(RELAY)!==0){
+            return origFetch(relayUrl(url),init);
+          }
+          return origFetch(input,init);
+        };
+      }
+      var OrigXHR=window.XMLHttpRequest;
+      if(OrigXHR){
+        var origOpen=OrigXHR.prototype.open;
+        OrigXHR.prototype.open=function(method,url){
+          var args=Array.prototype.slice.call(arguments);
+          if(typeof url==="string"&&sameOrigin(url)&&url.indexOf(RELAY)!==0){
+            args[1]=relayUrl(url);
+          }
+          return origOpen.apply(this,args);
+        };
+      }
+    })();</script>`;
+    if (/<head[^>]*>/i.test(html)) {
+      html = html.replace(/<head([^>]*)>/i, `<head$1>${assetBridge}`);
+    } else if (/<html[^>]*>/i.test(html)) {
+      html = html.replace(/<html([^>]*)>/i, `<html$1><head>${assetBridge}</head>`);
+    } else {
+      html = `<head>${assetBridge}</head>${html}`;
+    }
+
+    // ES module scripts (<script type="module" src="...">) enforce CORS on
+    // load, same as fetch/XHR — the in-page bridge above can't intercept the
+    // browser's own <script> fetch, so rewrite these src attributes to the
+    // asset relay server-side. Classic (non-module) scripts are exempt from
+    // CORS and load fine directly, so they're left alone.
+    html = html.replace(
+      /<script\b([^>]*\btype=["']module["'][^>]*)>/gi,
+      (fullTag, attrs: string) => {
+        const srcMatch = attrs.match(/\bsrc=["']([^"']+)["']/i);
+        if (!srcMatch) return fullTag;
+        try {
+          const abs = new URL(srcMatch[1], origin).toString();
+          const relayed = `${proxyOrigin}/api/preview-proxy-asset?url=${encodeURIComponent(abs)}`;
+          return `<script${attrs.replace(srcMatch[0], `src="${relayed}"`)}>`;
+        } catch {
+          return fullTag;
+        }
+      }
+    );
+
     // Contrast Lab / Explore: give proxied pages the same __ableInspect
     // bridge the bundled demo fixture exposes, so click-to-inspect works
     // against the real audited page, not just public/explore-demo.html.
