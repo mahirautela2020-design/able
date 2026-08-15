@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateHost } from "@/lib/ssrf";
-import { withPage } from "@/engine/browser";
+import { withPage, takeScreenshot } from "@/engine/browser";
 import { waitForPageSettle } from "@/engine/settle";
 import { isBotBlocked } from "@/engine/crawl";
 
@@ -42,39 +42,32 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const screenshot = await withPage(
-      async (page) => {
-        // Navigate and capture status + title for bot-block detection.
-        const response = await page.goto(target.toString(), {
-          waitUntil: "domcontentloaded",
-          timeout: 20_000,
-        });
-        const status = response?.status() ?? null;
-        const title = await page.title();
+    const screenshot = await withPage(async (page) => {
+      // Navigate and capture status + title for bot-block detection.
+      const response = await page.goto(target.toString(), {
+        waitUntil: "domcontentloaded",
+        timeout: 20_000,
+      });
+      const status = response?.status() ?? null;
+      const title = await page.title();
 
-        // Settle before screenshot: wait for networkidle, pause animations,
-        // dismiss consent modals. Reuse the same settle helper the auditor uses.
-        await waitForPageSettle(page, { networkidleTimedOut: false });
+      // Settle before screenshot: wait for networkidle, pause animations,
+      // dismiss consent modals. Reuse the same settle helper the auditor uses.
+      await waitForPageSettle(page, { networkidleTimedOut: false });
 
-        // Bot-block detection: if status is 403 or title suggests a captcha,
-        // return a blocked response (not an error, just a signal to the client
-        // to show tier-3).
-        if (isBotBlocked(title, status)) {
-          return { blocked: true as const };
-        }
+      // Bot-block detection: if status is 403 or title suggests a captcha,
+      // return a blocked response (not an error, just a signal to the client
+      // to show tier-3).
+      if (isBotBlocked(title, status)) {
+        return { blocked: true as const };
+      }
 
-        // Take screenshot with same settings as the auditor: full page with
-        // animations disabled, clipped to avoid runaway tall pages.
-        const buffer = await page.screenshot({
-          fullPage: true,
-          animations: "disabled",
-          clip: { x: 0, y: 0, width: 1440, height: 20_000 },
-        });
-
-        return { blocked: false as const, buffer };
-      },
-      { viewport: { width: 1280, height: 800 } }
-    );
+      // Reuse the auditor's screenshot helper so the viewport (1440×900 from
+      // withPage's default context) and the clip width agree — a mismatched
+      // clip wider than the viewport can fail the capture.
+      const buffer = await takeScreenshot(page);
+      return { blocked: false as const, buffer };
+    });
 
     // If bot-blocked, return JSON signal; client shows tier-3 message.
     if (screenshot.blocked) {
