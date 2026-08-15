@@ -364,6 +364,78 @@ export const ABLE_INSPECT_BRIDGE_SCRIPT = `
           }
         }
 
+        // Manage dictionary lookup: double-click a word for its definition,
+        // via the free, keyless Dictionary API (dictionaryapi.dev — MIT-
+        // licensed, Wiktionary-sourced). Entirely self-contained in the
+        // iframe: no postMessage round-trip to the parent needed.
+        if (settings.dictionary) {
+          if (!window.__ableDictHandler) {
+            var dictPopup = null;
+            function removeDictPopup() {
+              if (dictPopup) { dictPopup.remove(); dictPopup = null; }
+            }
+            function wordAt(x, y) {
+              var range;
+              if (document.caretRangeFromPoint) {
+                range = document.caretRangeFromPoint(x, y);
+              } else if (document.caretPositionFromPoint) {
+                var pos = document.caretPositionFromPoint(x, y);
+                if (pos) {
+                  range = document.createRange();
+                  range.setStart(pos.offsetNode, pos.offset);
+                  range.collapse(true);
+                }
+              }
+              if (!range || !range.startContainer || range.startContainer.nodeType !== 3) return null;
+              var text = range.startContainer.textContent || "";
+              var offset = range.startOffset;
+              var start = offset, end = offset;
+              while (start > 0 && /[a-zA-Z']/.test(text[start - 1])) start--;
+              while (end < text.length && /[a-zA-Z']/.test(text[end])) end++;
+              var word = text.slice(start, end).replace(/^'+|'+$/g, "");
+              return word.length > 1 ? word.toLowerCase() : null;
+            }
+            var dictHandler = function(ev) {
+              var word = wordAt(ev.clientX, ev.clientY);
+              removeDictPopup();
+              if (!word) return;
+              ev.preventDefault();
+              dictPopup = document.createElement("div");
+              dictPopup.className = "__able-dict-popup";
+              dictPopup.style.cssText = "position:fixed;max-width:280px;background:#111;color:#fff;padding:8px 10px;border-radius:6px;font-size:12px;line-height:1.4;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,0.3);left:" + (ev.clientX + 8) + "px;top:" + (ev.clientY + 12) + "px";
+              dictPopup.textContent = "Looking up \\"" + word + "\\"\\u2026";
+              document.body.appendChild(dictPopup);
+              fetch("https://api.dictionaryapi.dev/api/v2/entries/en/" + encodeURIComponent(word))
+                .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+                .then(function(data) {
+                  if (!dictPopup) return;
+                  var entry = data[0];
+                  var meaning = entry && entry.meanings && entry.meanings[0];
+                  var def = meaning && meaning.definitions && meaning.definitions[0];
+                  var phonetic = entry && (entry.phonetic || (entry.phonetics && entry.phonetics[0] && entry.phonetics[0].text)) || "";
+                  var pos = meaning ? meaning.partOfSpeech : "";
+                  var html = "<strong>" + word + "</strong>";
+                  if (phonetic) html += " <span style=\\"opacity:.7\\">" + phonetic + "</span>";
+                  if (pos) html += " <em style=\\"opacity:.7\\">(" + pos + ")</em>";
+                  html += "<br/>" + (def ? def.definition : "No definition found.");
+                  dictPopup.innerHTML = html;
+                })
+                .catch(function() {
+                  if (dictPopup) dictPopup.textContent = "No definition found for \\"" + word + "\\".";
+                });
+            };
+            document.addEventListener("dblclick", dictHandler);
+            document.addEventListener("click", removeDictPopup);
+            window.__ableDictHandler = { dblclick: dictHandler, click: removeDictPopup };
+          }
+        } else if (window.__ableDictHandler) {
+          document.removeEventListener("dblclick", window.__ableDictHandler.dblclick);
+          document.removeEventListener("click", window.__ableDictHandler.click);
+          var openPopup = document.querySelector(".__able-dict-popup");
+          if (openPopup) openPopup.remove();
+          window.__ableDictHandler = null;
+        }
+
         return true;
       }
 

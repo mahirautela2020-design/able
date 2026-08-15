@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { VoiceSupport } from "./voice-support";
 
 export interface AccessibilityProfileSettings {
   profile: string;
@@ -20,6 +21,7 @@ export interface AccessibilityProfileSettings {
   tooltips: boolean;
   focusMode: boolean;
   textMagnify: boolean;
+  dictionary: boolean;
 }
 
 export type Orientation = "portrait" | "landscape";
@@ -31,6 +33,9 @@ interface AccessibilityOptionsPanelProps {
   /** "fab" (default) = UX4G-style floating button + panel overlay.
    *  "inline" = render the controls directly (for the left-column tab). */
   variant?: "fab" | "inline";
+  /** Scrolls the live preview — wired by the parent to the iframe's own
+   * contentWindow, for the "scroll up"/"scroll down" voice commands. */
+  onScroll?: (direction: "up" | "down") => void;
 }
 
 export const DEFAULT_A11Y_SETTINGS: AccessibilityProfileSettings = {
@@ -51,6 +56,7 @@ export const DEFAULT_A11Y_SETTINGS: AccessibilityProfileSettings = {
   tooltips: false,
   focusMode: false,
   textMagnify: false,
+  dictionary: false,
 };
 
 interface PresetProfile {
@@ -120,6 +126,7 @@ export function AccessibilityOptionsPanel({
   orientation,
   onOrientationChange,
   variant = "fab",
+  onScroll,
 }: AccessibilityOptionsPanelProps) {
   const [open, setOpen] = useState(false);
   const [settings, setSettings] = useState<AccessibilityProfileSettings>(DEFAULT_A11Y_SETTINGS);
@@ -387,8 +394,24 @@ export function AccessibilityOptionsPanel({
                   />
                   <span>Text magnify (enlarge text on hover)</span>
                 </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="a11y-dictionary"
+                    checked={settings.dictionary}
+                    onChange={(e) => updateSettings({ dictionary: e.target.checked })}
+                  />
+                  <span>Dictionary (double-click a word for its definition)</span>
+                </label>
               </div>
             </section>
+
+            <VoiceSupport
+              settings={settings}
+              onCommand={updateSettings}
+              onScroll={onScroll}
+              onReset={() => applyPreset(PRESETS[0])}
+            />
 
             {/* Orientation */}
             <section className="border-t pt-2">
