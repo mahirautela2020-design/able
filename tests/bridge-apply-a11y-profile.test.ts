@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { ABLE_INSPECT_BRIDGE_SCRIPT } from "@/lib/explore/bridge-script";
 
 interface AbleInspectBridge {
@@ -69,9 +69,32 @@ describe("bridge applyAccessibilityProfile (real jsdom execution, not just strin
     expect(window.__ableInspect!.applyAccessibilityProfile({})).toBe(true);
   });
 
-  it("injects a focus-mode outline rule when focusMode is true", () => {
+  it("attaches a hover spotlight handler when focusMode is enabled, and removes it (and its overlay) when disabled", () => {
     window.__ableInspect!.applyAccessibilityProfile({ focusMode: true });
-    expect(document.getElementById("__able-a11y-style")!.textContent).toContain("*:focus{outline:4px solid");
+    expect((window as unknown as { __ableFocusModeHandler?: unknown }).__ableFocusModeHandler).not.toBeUndefined();
+    expect((window as unknown as { __ableFocusModeHandler?: unknown }).__ableFocusModeHandler).not.toBeNull();
+    expect(document.getElementById("__able-focus-spot")).not.toBeNull();
+
+    // Hovering a content section should not throw, even without real layout.
+    const p = document.createElement("p");
+    p.textContent = "hello";
+    document.body.appendChild(p);
+    expect(() =>
+      p.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }))
+    ).not.toThrow();
+
+    window.__ableInspect!.applyAccessibilityProfile({ focusMode: false });
+    expect((window as unknown as { __ableFocusModeHandler?: unknown }).__ableFocusModeHandler).toBeNull();
+    expect(document.getElementById("__able-focus-spot")).toBeNull();
+  });
+
+  it("does not attach a second focus-mode handler when applied twice", () => {
+    window.__ableInspect!.applyAccessibilityProfile({ focusMode: true });
+    const first = (window as unknown as { __ableFocusModeHandler?: unknown }).__ableFocusModeHandler;
+    window.__ableInspect!.applyAccessibilityProfile({ focusMode: true });
+    const second = (window as unknown as { __ableFocusModeHandler?: unknown }).__ableFocusModeHandler;
+    expect(second).toBe(first);
+    expect(document.querySelectorAll("#__able-focus-spot").length).toBe(1);
   });
 
   it("injects a text-magnify hover rule when textMagnify is true", () => {
@@ -93,5 +116,63 @@ describe("bridge applyAccessibilityProfile (real jsdom execution, not just strin
 
     window.__ableInspect!.applyAccessibilityProfile({ dictionary: false });
     expect((window as unknown as { __ableDictHandler?: unknown }).__ableDictHandler).toBeNull();
+  });
+
+  it("renders a pronunciation-audio button when the dictionary API returns an audio URL, and playing it does not bubble to close the popup", async () => {
+    const textNode = document.createTextNode("hello world");
+    const p = document.createElement("p");
+    p.appendChild(textNode);
+    document.body.appendChild(p);
+
+    document.caretRangeFromPoint = vi.fn(() => {
+      const range = document.createRange();
+      range.setStart(textNode, 1);
+      range.collapse(true);
+      return range;
+    }) as unknown as typeof document.caretRangeFromPoint;
+
+    const audioPlay = vi.fn();
+    (window as unknown as { Audio: unknown }).Audio = vi.fn(function AudioStub() {
+      return { play: audioPlay };
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [
+          {
+            word: "hello",
+            phonetic: "/həˈloʊ/",
+            phonetics: [
+              { text: "/həˈloʊ/", audio: "" },
+              { text: "", audio: "https://example.com/hello.mp3" },
+            ],
+            meanings: [
+              { partOfSpeech: "exclamation", definitions: [{ definition: "used as a greeting" }] },
+            ],
+          },
+        ],
+      })
+    );
+
+    window.__ableInspect!.applyAccessibilityProfile({ dictionary: true });
+    document.dispatchEvent(new MouseEvent("dblclick", { clientX: 5, clientY: 5, bubbles: true }));
+
+    await vi.waitFor(() => {
+      expect(document.querySelector(".__able-dict-audio")).not.toBeNull();
+    });
+
+    const audioBtn = document.querySelector(".__able-dict-audio") as HTMLButtonElement;
+    expect(() => audioBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))).not.toThrow();
+    expect(audioPlay).toHaveBeenCalled();
+    // The popup should still be present — the audio button's click didn't
+    // bubble up to the document-level "close popup on click" handler.
+    expect(document.querySelector(".__able-dict-popup")).not.toBeNull();
+
+    vi.unstubAllGlobals();
+    delete (window as unknown as { Audio?: unknown }).Audio;
+    document.caretRangeFromPoint = undefined as unknown as typeof document.caretRangeFromPoint;
+    window.__ableInspect!.applyAccessibilityProfile({ dictionary: false });
   });
 });

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { VoiceSupport } from "./voice-support";
+import { ScreenReaderToggle } from "./screen-reader-toggle";
 
 export interface AccessibilityProfileSettings {
   profile: string;
@@ -36,6 +37,10 @@ interface AccessibilityOptionsPanelProps {
   /** Scrolls the live preview — wired by the parent to the iframe's own
    * contentWindow, for the "scroll up"/"scroll down" voice commands. */
   onScroll?: (direction: "up" | "down") => void;
+  /** Returns the live preview's current visible text — wired by the parent
+   * to the iframe's own contentWindow/document, for the in-widget "Screen
+   * Reader" (read page aloud) toggle. */
+  onGetPageText?: () => string;
 }
 
 export const DEFAULT_A11Y_SETTINGS: AccessibilityProfileSettings = {
@@ -127,6 +132,7 @@ export function AccessibilityOptionsPanel({
   onOrientationChange,
   variant = "fab",
   onScroll,
+  onGetPageText,
 }: AccessibilityOptionsPanelProps) {
   const [open, setOpen] = useState(false);
   const [settings, setSettings] = useState<AccessibilityProfileSettings>(DEFAULT_A11Y_SETTINGS);
@@ -261,7 +267,7 @@ export function AccessibilityOptionsPanel({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium mb-1">Letter Spacing</label>
+                  <label className="block text-[10px] font-medium mb-1">Text Spacing</label>
                   <select
                     data-testid="a11y-letter-spacing"
                     value={settings.letterSpacing}
@@ -347,16 +353,16 @@ export function AccessibilityOptionsPanel({
                     checked={settings.bigCursor}
                     onChange={(e) => updateSettings({ bigCursor: e.target.checked })}
                   />
-                  <span>Large cursor</span>
+                  <span>Cursor Size</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    data-testid="a11y-reading-guide"
+                    data-testid="a11y-reading-guides"
                     checked={settings.readingGuide}
                     onChange={(e) => updateSettings({ readingGuide: e.target.checked })}
                   />
-                  <span>Reading line</span>
+                  <span>Reading Guides</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -383,7 +389,7 @@ export function AccessibilityOptionsPanel({
                     checked={settings.focusMode}
                     onChange={(e) => updateSettings({ focusMode: e.target.checked })}
                   />
-                  <span>Focus mode (stronger focus outline)</span>
+                  <span>Focus mode (light up section on hover)</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -405,6 +411,10 @@ export function AccessibilityOptionsPanel({
                 </label>
               </div>
             </section>
+
+            {/* Orientation Adjustment: UX4G groups Screen Reader (read the
+                current page aloud) right alongside Voice Support. */}
+            <ScreenReaderToggle onGetPageText={onGetPageText} />
 
             <VoiceSupport
               settings={settings}
