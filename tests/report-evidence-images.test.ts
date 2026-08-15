@@ -99,3 +99,14 @@ describe("buildReportHtml — evidence images (regression: PDF route resolved si
     expect(html).toContain('src="https://storage.example/evidence/audit-1/full.webp"');
   });
 });
+
+describe("buildReportHtml — compliance-matrix status is a text badge, not an emoji (regression: SC status column rendered as a bare emoji glyph — unclear/unreadable in the PDF, especially once rasterized)", () => {
+  it("renders a labeled text badge for every SC status and no emoji glyphs", async () => {
+    state.findings = [baseFinding];
+
+    const html = await buildReportHtml("audit-1");
+
+    expect(html).toMatch(/<span class="badge badge-\w+">[\w\s/]+<\/span>/);
+    expect(html).not.toMatch(/[✅❌👁🖐]/);
+  });
+});
