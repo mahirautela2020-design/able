@@ -154,6 +154,38 @@ export async function GET(request: NextRequest) {
           return origOpen.apply(this,args);
         };
       }
+      // Analytics/martech libs commonly inject <script>/<link> tags at
+      // runtime (document.createElement + .src=, often with
+      // crossOrigin="anonymous" for SRI) instead of shipping them in the
+      // static HTML — those never pass through the server-side rewrite
+      // above, so patch the src/href property setters directly.
+      function patchUrlProp(proto, prop){
+        var desc=Object.getOwnPropertyDescriptor(proto,prop);
+        if(!desc||!desc.set||!desc.get) return;
+        Object.defineProperty(proto,prop,{
+          configurable:true,
+          enumerable:desc.enumerable,
+          get:desc.get,
+          set:function(v){
+            if(typeof v==="string"&&sameOrigin(v)&&v.indexOf(RELAY)!==0){
+              v=relayUrl(v);
+            }
+            return desc.set.call(this,v);
+          }
+        });
+      }
+      if(window.HTMLScriptElement) patchUrlProp(window.HTMLScriptElement.prototype,"src");
+      if(window.HTMLLinkElement) patchUrlProp(window.HTMLLinkElement.prototype,"href");
+      var origSetAttribute=Element.prototype.setAttribute;
+      Element.prototype.setAttribute=function(name,value){
+        var tag=this.tagName;
+        if((tag==="SCRIPT"&&name==="src")||(tag==="LINK"&&name==="href")){
+          if(typeof value==="string"&&sameOrigin(value)&&value.indexOf(RELAY)!==0){
+            value=relayUrl(value);
+          }
+        }
+        return origSetAttribute.call(this,name,value);
+      };
     })();</script>`;
     if (/<head[^>]*>/i.test(html)) {
       html = html.replace(/<head([^>]*)>/i, `<head$1>${assetBridge}`);
@@ -177,6 +209,38 @@ export async function GET(request: NextRequest) {
           const abs = new URL(srcMatch[1], origin).toString();
           const relayed = `${proxyOrigin}/api/preview-proxy-asset?url=${encodeURIComponent(abs)}`;
           return `<script${attrs.replace(srcMatch[0], `src="${relayed}"`)}>`;
+        } catch {
+          return fullTag;
+        }
+      }
+    );
+
+    // <link rel="preload"/"modulepreload"> are pure performance hints, but
+    // the browser's own preloader fetches them immediately and directly —
+    // it never goes through fetch/XHR or the script/link element property
+    // setters, so nothing above can intercept or relay it. A cross-origin
+    // preload (especially with crossorigin set, which most modulepreload/
+    // font preloads carry) just CORS-fails outright. Drop the hint entirely
+    // instead: the real resource still loads normally via the actual
+    // <script>/<link rel=stylesheet> tag (already relayed above), just
+    // without the early-fetch performance benefit — irrelevant here.
+    html = html.replace(/<link\b[^>]*\brel=["'](?:preload|modulepreload)["'][^>]*>/gi, "");
+
+    // Stylesheets themselves load fine cross-origin (no CORS gate on <link
+    // rel=stylesheet>), but cross-origin @font-face inside them IS CORS-
+    // gated in every browser — a plain direct load would fetch the CSS but
+    // then silently fail every custom webfont it declares, falling back to
+    // system fonts. Route through the asset relay, which rewrites the CSS's
+    // own url()/@import references to stay CORS-free recursively.
+    html = html.replace(
+      /<link\b([^>]*\brel=["']stylesheet["'][^>]*)>/gi,
+      (fullTag, attrs: string) => {
+        const hrefMatch = attrs.match(/\bhref=["']([^"']+)["']/i);
+        if (!hrefMatch) return fullTag;
+        try {
+          const abs = new URL(hrefMatch[1], origin).toString();
+          const relayed = `${proxyOrigin}/api/preview-proxy-asset?url=${encodeURIComponent(abs)}`;
+          return `<link${attrs.replace(hrefMatch[0], `href="${relayed}"`)}>`;
         } catch {
           return fullTag;
         }
