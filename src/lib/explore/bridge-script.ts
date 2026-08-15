@@ -251,6 +251,20 @@ export const ABLE_INSPECT_BRIDGE_SCRIPT = `
           css.push("*{cursor:url('" + cursorSvg + "') 0 0,auto!important}");
         }
 
+        // Focus mode: a much stronger, always-visible focus indicator
+        // (UX4G's "Focus Mode") — a real spotlight/dim overlay would need
+        // per-keystroke DOM tracking; this is the CSS-only equivalent.
+        if (settings.focusMode) {
+          css.push("*:focus{outline:4px solid #2563eb!important;outline-offset:3px!important;box-shadow:0 0 0 6px rgba(37,99,235,0.35)!important}");
+        }
+
+        // Text magnify: enlarges text under the cursor (UX4G's "Text
+        // Magnify") — a true cursor-following lens would need a canvas
+        // overlay; this hover-scale is the CSS-only equivalent.
+        if (settings.textMagnify) {
+          css.push("p:hover,span:hover,li:hover,a:hover,h1:hover,h2:hover,h3:hover,h4:hover,h5:hover,h6:hover,button:hover,label:hover{font-size:1.5em!important;transition:font-size .1s ease}");
+        }
+
         // Update or create style element
         if (css.length > 0 || filterParts.length > 0) {
           var styleText = css.join("");
