@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { authHeaders } from "@/lib/supabase/client";
+import { ariaTreeToTranscript } from "@/lib/sr/aria-transcript";
 
 interface SrPreviewProps {
   auditId: string;
+  targetUrl: string;
 }
 
 /**
@@ -14,11 +16,13 @@ interface SrPreviewProps {
  * (no server/TTS dependency — unsupported browsers just don't see the
  * controls).
  */
-export function SrPreview({ auditId }: SrPreviewProps) {
+export function SrPreview({ auditId, targetUrl }: SrPreviewProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lines, setLines] = useState<string[] | null>(null);
   const [error, setError] = useState(false);
+  const [live, setLive] = useState(false);
+  const [liveLoading, setLiveLoading] = useState(false);
   const [scrollIndex, setScrollIndex] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -94,16 +98,50 @@ export function SrPreview({ auditId }: SrPreviewProps) {
   async function fetchTranscript() {
     setLoading(true);
     setError(false);
+    setLive(false);
     try {
       const headers = await authHeaders();
       const res = await fetch(`/api/audits/${auditId}/sr-preview`, { headers });
       if (!res.ok) throw new Error("Failed to fetch");
       const json = await res.json();
-      setLines(json.lines ?? []);
+      const storedLines: string[] = json.lines ?? [];
+      if (storedLines.length > 0) {
+        setLines(storedLines);
+        return;
+      }
+      // The audit's own stored transcript (captured once during the scan)
+      // can come back empty — e.g. the accessibility-tree capture step is
+      // best-effort and silently skips on failure. Fall back to building a
+      // fresh transcript live from the current page instead of leaving the
+      // user with a dead "no transcript" panel.
+      await captureLiveTranscript();
     } catch {
       setError(true);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function captureLiveTranscript() {
+    setLiveLoading(true);
+    try {
+      const res = await fetch("/api/explore/ax-snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: targetUrl }),
+      });
+      if (!res.ok) {
+        setLines((prev) => prev ?? []);
+        return;
+      }
+      const json = await res.json();
+      const transcript = ariaTreeToTranscript(json.snapshot ?? null);
+      setLines(transcript);
+      setLive(true);
+    } catch {
+      setLines((prev) => prev ?? []);
+    } finally {
+      setLiveLoading(false);
     }
   }
 
@@ -234,29 +272,47 @@ export function SrPreview({ auditId }: SrPreviewProps) {
 
       {open && (
         <div className="px-3 pb-3 space-y-2 max-h-96 overflow-y-auto">
-          {loading && (
-            <p className="text-xs text-muted-foreground">Loading transcript...</p>
+          {(loading || liveLoading) && (
+            <p className="text-xs text-muted-foreground">
+              {liveLoading ? "Capturing a live transcript from the page…" : "Loading transcript..."}
+            </p>
           )}
 
-          {!loading && error && (
+          {!loading && !liveLoading && error && (
             <p className="text-xs text-red-600 dark:text-red-400">
               Could not load SR preview. Try again.
             </p>
           )}
 
-          {!loading && !error && lines !== null && lines.length === 0 && (
-            <p className="text-xs text-muted-foreground">
-              No speech transcript available for this audit. Run an audit first.
-            </p>
+          {!loading && !liveLoading && !error && lines !== null && lines.length === 0 && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                No speech transcript could be captured for this page.
+              </p>
+              <button
+                onClick={captureLiveTranscript}
+                className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
+              >
+                Try capturing live from the page
+              </button>
+            </div>
           )}
 
-          {!loading && !error && lines !== null && lines.length > 0 && (
+          {!loading && !liveLoading && !error && lines !== null && lines.length > 0 && (
             <>
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <span className="text-xs text-muted-foreground">
                   {lines.length} announcements
+                  {live ? " · captured live from the current page" : ""}
                 </span>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={captureLiveTranscript}
+                    title="Re-capture the transcript from the page's current state — a real screen-reader test"
+                    className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
+                  >
+                    Test live
+                  </button>
                   {speechSupported && (
                     <>
                       <button
