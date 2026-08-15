@@ -124,7 +124,7 @@ export function AuditList() {
                 <button
                   onClick={() => handleDelete(audit.id)}
                   disabled={deleting}
-                  className="text-destructive hover:underline text-sm font-medium disabled:opacity-50"
+                  className="text-destructive hover:underline text-sm font-medium disabled:opacity-50 animate-in fade-in duration-150 ease-out motion-reduce:animate-none"
                 >
                   {deleting ? "Deleting…" : "Confirm delete"}
                 </button>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getWcagRegistry, type WcagSuccessCriterion } from "@/engine/wcag-registry";
@@ -623,47 +624,57 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
                   className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold bg-muted/40 hover:bg-muted/60 transition-colors"
                 >
                   <span>{principle.label}</span>
-                  <span className="text-muted-foreground font-normal">
-                    {scs.length} {isCollapsed ? "▸" : "▾"}
+                  <span className="text-muted-foreground font-normal inline-flex items-center gap-1">
+                    {scs.length}
+                    <ChevronIcon collapsed={isCollapsed} />
                   </span>
                 </button>
-                {!isCollapsed && (
-                  <div className="p-2 space-y-1">
-                    {scs.length === 0 && (
-                      <p className="text-xs text-muted-foreground p-2">
-                        No criteria under this level.
-                      </p>
+                {/* Height-animated via the CSS grid-rows trick (0fr↔1fr) so
+                    the section always stays mounted — no need to measure
+                    pixel heights in JS, and it degrades gracefully to an
+                    instant snap under prefers-reduced-motion. */}
+                <div
+                  className="grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none"
+                  style={{ gridTemplateRows: isCollapsed ? "0fr" : "1fr" }}
+                >
+                  <div className="overflow-hidden min-h-0">
+                    <div className="p-2 space-y-1">
+                      {scs.length === 0 && (
+                        <p className="text-xs text-muted-foreground p-2">
+                          No criteria under this level.
+                        </p>
+                      )}
+                      {scs.map(({ sc, count, status }) => (
+              <button
+                key={sc.id}
+                onClick={() => setActiveSc(activeSc === sc.id ? null : sc.id)}
+                className={`w-full text-left p-2 rounded-md border transition-colors ${
+                  activeSc === sc.id
+                    ? "bg-accent border-primary/40"
+                    : "hover:bg-accent/50 border-transparent"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs font-medium">{sc.id}</span>
+                  <div className="flex items-center gap-1.5">
+                    <StatusDot status={status} />
+                    {count > 0 && (
+                      <span className="text-xs text-muted-foreground">{count}</span>
                     )}
-                    {scs.map(({ sc, count, status }) => (
-            <button
-              key={sc.id}
-              onClick={() => setActiveSc(activeSc === sc.id ? null : sc.id)}
-              className={`w-full text-left p-2 rounded-md border transition-colors ${
-                activeSc === sc.id
-                  ? "bg-accent border-primary/40"
-                  : "hover:bg-accent/50 border-transparent"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-mono text-xs font-medium">{sc.id}</span>
-                <div className="flex items-center gap-1.5">
-                  <StatusDot status={status} />
-                  {count > 0 && (
-                    <span className="text-xs text-muted-foreground">{count}</span>
-                  )}
-                </div>
-              </div>
-              <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                {sc.name}
-              </p>
-              <p className="text-[10px] text-muted-foreground/70 mt-0.5">
-                {statusLabel(status)}
-                {sc.manualTest ? " · manual" : ""} · {sc.level}
-              </p>
-            </button>
-                    ))}
                   </div>
-                )}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                  {sc.name}
+                </p>
+                <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                  {statusLabel(status)}
+                  {sc.manualTest ? " · manual" : ""} · {sc.level}
+                </p>
+              </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
             );
           })}
@@ -882,6 +893,19 @@ const STATUS_STYLE: Record<string, string> = {
   pass: "bg-emerald-500",
   manual: "bg-slate-400",
 };
+
+/** Rotates in place rather than swapping glyphs, matching the height
+ * animation on the section it labels. */
+function ChevronIcon({ collapsed }: { collapsed: boolean }) {
+  return (
+    <ChevronDown
+      className={`h-3 w-3 shrink-0 transition-transform duration-200 ease-out motion-reduce:transition-none ${
+        collapsed ? "-rotate-90" : ""
+      }`}
+      aria-hidden="true"
+    />
+  );
+}
 
 function StatusDot({ status }: { status: string }) {
   return (
