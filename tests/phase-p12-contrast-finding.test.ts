@@ -71,13 +71,27 @@ const { sanitizeUrl, validateHost } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/ssrf", () => ({ sanitizeUrl, validateHost }));
 
+// waitForPageSettle (src/engine/settle.ts) also calls page.evaluate() —
+// with NO selector argument (hasRoot check, fonts.ready) — before the
+// route's own domHasText check, which always passes a selector as the
+// second argument. Keying off argument count (rather than call order via
+// mockResolvedValueOnce) keeps the domHasText result correct regardless of
+// how many settle-related evaluate() calls happen first.
+let domHasTextValue: boolean | "reject" = true;
+
 const fakePage = {
   goto: vi.fn(async () => {}),
   screenshot: vi.fn(async () => Buffer.from("fake-screenshot")),
-  // Default: agrees with the client-posted hasText in `failingBody` (true)
-  // so existing tests are unaffected; individual tests override this to
-  // exercise the server-side verification.
-  evaluate: vi.fn(async () => true),
+  waitForSelector: vi.fn(async () => {}),
+  addStyleTag: vi.fn(async () => {}),
+  emulateMedia: vi.fn(async () => {}),
+  waitForLoadState: vi.fn(async () => {}),
+  waitForTimeout: vi.fn(async () => {}),
+  evaluate: vi.fn(async (_fn: unknown, ...args: unknown[]) => {
+    if (args.length === 0) return false; // settle.ts's hasRoot/fonts.ready checks
+    if (domHasTextValue === "reject") throw new Error("selector not found");
+    return domHasTextValue;
+  }),
 };
 
 vi.mock("@/engine/browser", () => ({
@@ -102,6 +116,7 @@ import { POST } from "@/app/api/audits/[id]/contrast-finding/route";
 
 afterEach(() => {
   vi.clearAllMocks();
+  domHasTextValue = true;
   requireSession.mockResolvedValue({ ok: true as const, userId: "user-1" });
   getAudit.mockImplementation(async (id: string) => {
     if (id === "missing-audit") throw new Error("not found");
@@ -185,13 +200,13 @@ describe("POST /api/audits/[id]/contrast-finding", () => {
   });
 
   it("picks 1.4.3 when hasText is true, 1.4.11 when false — server-verified against the live DOM, agreeing with the client here", async () => {
-    fakePage.evaluate.mockResolvedValueOnce(true);
+    domHasTextValue = true;
     await POST(makeRequest(failingBody), { params: Promise.resolve({ id: "audit-1" }) });
     expect(insertFindings.mock.calls[0][0][0].wcag_criterion).toBe("1.4.3");
 
     vi.clearAllMocks();
     getAuditPageId.mockResolvedValue("page-1");
-    fakePage.evaluate.mockResolvedValueOnce(false);
+    domHasTextValue = false;
     // Non-text (1.4.11) has a flat 3:1 floor, not the 4.5:1 text floor —
     // failingBody's ~4.29:1 pair genuinely PASSES 3:1, so it can no longer
     // be used here; #a8a8a8 on white (~2.38:1) fails both floors.
@@ -383,7 +398,7 @@ describe("POST /api/audits/[id]/contrast-finding", () => {
 
   describe("hasText verification (regression: client-posted hasText was trusted with no cross-check)", () => {
     it("overrides a mismatched client hasText with the real DOM textContent check (client lies true, DOM says false)", async () => {
-      fakePage.evaluate.mockResolvedValueOnce(false);
+      domHasTextValue = false;
       await POST(
         makeRequest({ ...failingBody, hasText: true, selector: "#icon-btn" }),
         { params: Promise.resolve({ id: "audit-1" }) }
@@ -393,7 +408,7 @@ describe("POST /api/audits/[id]/contrast-finding", () => {
     });
 
     it("overrides a mismatched client hasText the other direction (client lies false, DOM says true)", async () => {
-      fakePage.evaluate.mockResolvedValueOnce(true);
+      domHasTextValue = true;
       // The client-posted (pre-verification) hasText:false routes the early
       // gate through the 3:1 non-text floor, so the pair must fail that
       // floor too — failingBody's ~4.29:1 pair no longer does.
@@ -405,7 +420,7 @@ describe("POST /api/audits/[id]/contrast-finding", () => {
     });
 
     it("falls back to the client-supplied hasText when the live DOM check itself fails (best-effort)", async () => {
-      fakePage.evaluate.mockRejectedValueOnce(new Error("selector not found"));
+      domHasTextValue = "reject";
       await POST(
         makeRequest({ ...failingBody, hasText: true }),
         { params: Promise.resolve({ id: "audit-1" }) }

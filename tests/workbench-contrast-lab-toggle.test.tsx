@@ -13,7 +13,7 @@ function stubFetch() {
   );
 }
 
-describe("Workbench — Contrast Lab toggle (real workbench, not the disconnected fixture route)", () => {
+describe("Workbench — Inspect mode nav (real workbench, not the disconnected fixture route; renamed from 'Contrast Lab' since it also covers keyboard replay, CVD simulation, and the AX tree)", () => {
   it("defaults to the live preview iframe", () => {
     stubFetch();
     render(
@@ -23,29 +23,29 @@ describe("Workbench — Contrast Lab toggle (real workbench, not the disconnecte
     expect(screen.queryByTitle("Explore preview")).not.toBeInTheDocument();
   });
 
-  it("clicking 'Contrast Lab' swaps the right pane to the real ExplorePanel, wired with the real auditId", () => {
+  it("clicking 'Inspect' swaps the right pane to the real ExplorePanel, wired with the real auditId", () => {
     stubFetch();
     render(
       <Workbench auditId="audit-1" targetUrl="https://example.com" auditStatus="complete" findings={[]} />
     );
 
-    fireEvent.click(screen.getByText("Contrast Lab"));
+    fireEvent.click(screen.getByText("Inspect"));
 
     expect(screen.getByTitle("Explore preview")).toBeInTheDocument();
     expect(screen.queryByTitle("Live preview of https://example.com")).not.toBeInTheDocument();
     expect(screen.getByText("Element Inspector")).toBeInTheDocument();
   });
 
-  it("toggling back to 'Preview' restores the live iframe", () => {
+  it("switching back to 'Checklist' mode restores the live iframe", () => {
     stubFetch();
     render(
       <Workbench auditId="audit-1" targetUrl="https://example.com" auditStatus="complete" findings={[]} />
     );
 
-    fireEvent.click(screen.getByText("Contrast Lab"));
+    fireEvent.click(screen.getByText("Inspect"));
     expect(screen.getByTitle("Explore preview")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Preview"));
+    fireEvent.click(screen.getByText("Checklist"));
     expect(screen.getByTitle("Live preview of https://example.com")).toBeInTheDocument();
   });
 });
