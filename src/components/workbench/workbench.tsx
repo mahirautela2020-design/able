@@ -625,6 +625,12 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
               onApply={ctrl.handleApplyA11yProfile}
               orientation={orientation}
               onOrientationChange={setOrientation}
+              onScroll={(direction) =>
+                iframeRef.current?.contentWindow?.scrollBy({
+                  top: direction === "down" ? 400 : -400,
+                  behavior: "smooth",
+                })
+              }
             />
           </div>
         )}
