@@ -52,6 +52,123 @@ describe("preview-proxy-asset — subresource relay (regression: same-origin fet
   });
 });
 
+describe("preview-proxy-asset — CSS url()/@import rewriting (regression: cross-origin @font-face is CORS-gated in every browser, unlike plain images/scripts — a stylesheet relayed as raw bytes still failed every custom webfont it declared)", () => {
+  function stubCssFetch(css: string) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        status: 200,
+        headers: { get: (n: string) => (n === "content-type" ? "text/css; charset=utf-8" : null) },
+        arrayBuffer: async () => new TextEncoder().encode(css).buffer,
+      }))
+    );
+  }
+
+  it("rewrites a relative url() to an absolute relay URL resolved against the stylesheet's own location", async () => {
+    stubCssFetch(`@font-face { src: url("../fonts/brand.woff2") format("woff2"); }`);
+    const req = new NextRequest(
+      "http://localhost:3000/api/preview-proxy-asset?url=" +
+        encodeURIComponent("https://example.com/styles/main.css")
+    );
+    const res = await assetGet(req);
+    const body = await res.text();
+    expect(body).toContain(
+      'url("http://localhost:3000/api/preview-proxy-asset?url=' +
+        encodeURIComponent("https://example.com/fonts/brand.woff2") +
+        '")'
+    );
+  });
+
+  it("rewrites both @import forms (bare string and url()) without double-wrapping", async () => {
+    stubCssFetch(`@import "tokens.css";\n@import url(normalize.css);`);
+    const req = new NextRequest(
+      "http://localhost:3000/api/preview-proxy-asset?url=" +
+        encodeURIComponent("https://example.com/styles/main.css")
+    );
+    const res = await assetGet(req);
+    const body = await res.text();
+    const tokensRelay =
+      'http://localhost:3000/api/preview-proxy-asset?url=' +
+      encodeURIComponent("https://example.com/styles/tokens.css");
+    const normalizeRelay =
+      'http://localhost:3000/api/preview-proxy-asset?url=' +
+      encodeURIComponent("https://example.com/styles/normalize.css");
+    expect(body).toContain(`@import "${tokensRelay}"`);
+    expect(body).toContain(`@import "${normalizeRelay}"`);
+    // The exact regression: url() and @import overlap on `@import url(...)`
+    // syntax — a naive two-pass rewrite double-wraps it (relay(relay(x))).
+    expect(body).not.toContain(encodeURIComponent("localhost:3000"));
+  });
+
+  it("leaves data: URIs alone", async () => {
+    stubCssFetch(`.icon { background: url(data:image/png;base64,AAAA); }`);
+    const req = new NextRequest(
+      "http://localhost:3000/api/preview-proxy-asset?url=" + encodeURIComponent("https://example.com/x.css")
+    );
+    const res = await assetGet(req);
+    const body = await res.text();
+    expect(body).toContain("url(data:image/png;base64,AAAA)");
+  });
+});
+
+describe("preview-proxy-asset — JS import specifier rewriting (regression: a relayed script's relative import()/import-from specifiers resolve against the RELAY's own url, not the script's real location, landing under /api/preview-proxy-asset's own directory instead of the real site)", () => {
+  function stubJsFetch(js: string) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        status: 200,
+        headers: { get: (n: string) => (n === "content-type" ? "text/javascript; charset=utf-8" : null) },
+        arrayBuffer: async () => new TextEncoder().encode(js).buffer,
+      }))
+    );
+  }
+
+  it("rewrites a relative dynamic import() to an absolute relay URL resolved against the script's own location", async () => {
+    stubJsFetch(`export async function load(){ return import("./utils/common-utils.js"); }`);
+    const req = new NextRequest(
+      "http://localhost:3000/api/preview-proxy-asset?url=" +
+        encodeURIComponent("https://example.com/scripts/aem.js")
+    );
+    const res = await assetGet(req);
+    const body = await res.text();
+    expect(body).toContain(
+      'import("http://localhost:3000/api/preview-proxy-asset?url=' +
+        encodeURIComponent("https://example.com/scripts/utils/common-utils.js") +
+        '")'
+    );
+  });
+
+  it("rewrites static import-from and side-effect import specifiers", async () => {
+    stubJsFetch(`import { decorate } from "./utils/decorate.js";\nimport "./polyfill.js";`);
+    const req = new NextRequest(
+      "http://localhost:3000/api/preview-proxy-asset?url=" +
+        encodeURIComponent("https://example.com/scripts/aem.js")
+    );
+    const res = await assetGet(req);
+    const body = await res.text();
+    expect(body).toContain(
+      'from "http://localhost:3000/api/preview-proxy-asset?url=' +
+        encodeURIComponent("https://example.com/scripts/utils/decorate.js") +
+        '"'
+    );
+    expect(body).toContain(
+      'import "http://localhost:3000/api/preview-proxy-asset?url=' +
+        encodeURIComponent("https://example.com/scripts/polyfill.js") +
+        '"'
+    );
+  });
+
+  it("leaves bare-specifier and non-module-syntax code untouched (no 'from' clause, no relative path)", async () => {
+    stubJsFetch(`export const importantThing = "from here"; export { x };`);
+    const req = new NextRequest(
+      "http://localhost:3000/api/preview-proxy-asset?url=" + encodeURIComponent("https://example.com/x.js")
+    );
+    const res = await assetGet(req);
+    const body = await res.text();
+    expect(body).toContain(`export const importantThing = "from here"; export { x };`);
+  });
+});
+
 describe("preview-proxy — asset bridge injection (regression: relay URL was relative, so it resolved against the injected <base href> — the TARGET's origin — sending 'relayed' calls straight back to the target and reproducing the exact CORS failure this exists to avoid)", () => {
   it("injects an ABSOLUTE relay URL rooted at our own origin, not the target's", async () => {
     vi.stubGlobal(
@@ -109,5 +226,71 @@ describe("preview-proxy — asset bridge injection (regression: relay URL was re
     const res = await proxyGet(req);
     const body = await res.text();
     expect(body).toContain('<script src="/scripts/app.js">');
+  });
+
+  it("relays <link rel=stylesheet> through the asset relay so its own cross-origin @font-face references stay CORS-free", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: { get: (n: string) => (n === "content-type" ? "text/html; charset=utf-8" : null) },
+        text: async () =>
+          '<html><head><link rel="stylesheet" href="/styles/main.css"></head><body></body></html>',
+      }))
+    );
+    const req = new NextRequest("http://localhost:3000/api/preview-proxy?url=https://example.com/page");
+    const res = await proxyGet(req);
+    const body = await res.text();
+    expect(body).toContain(
+      'href="http://localhost:3000/api/preview-proxy-asset?url=' +
+        encodeURIComponent("https://example.com/styles/main.css") +
+        '"'
+    );
+  });
+
+  it("strips <link rel=preload>/rel=modulepreload> tags (regression: the browser's own preloader fetches these directly and immediately — no fetch/XHR/element-property patch can intercept it, so a cross-origin preload just CORS-fails outright; the real resource still loads fine via its actual relayed <script>/<link> tag)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: { get: (n: string) => (n === "content-type" ? "text/html; charset=utf-8" : null) },
+        text: async () =>
+          '<html><head>' +
+          '<link rel="preload" as="script" href="/scripts/martech.js" crossorigin>' +
+          '<link rel="modulepreload" href="/scripts/app.js">' +
+          '<link rel="stylesheet" href="/styles/main.css">' +
+          '</head><body></body></html>',
+      }))
+    );
+    const req = new NextRequest("http://localhost:3000/api/preview-proxy?url=https://example.com/page");
+    const res = await proxyGet(req);
+    const body = await res.text();
+    expect(body).not.toContain("preload");
+    expect(body).not.toContain("modulepreload");
+    // The real stylesheet link (not a preload hint) must still be present.
+    expect(body).toContain("stylesheet");
+  });
+
+  it("patches dynamic script/link injection (document.createElement + .src=) so analytics libs that inject tags at runtime — never present in the static HTML this route rewrites — still get relayed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: { get: (n: string) => (n === "content-type" ? "text/html; charset=utf-8" : null) },
+        text: async () => "<html><head></head><body></body></html>",
+      }))
+    );
+    const req = new NextRequest("http://localhost:3000/api/preview-proxy?url=https://example.com/page");
+    const res = await proxyGet(req);
+    const body = await res.text();
+    expect(body).toContain('patchUrlProp(window.HTMLScriptElement.prototype,"src")');
+    expect(body).toContain('patchUrlProp(window.HTMLLinkElement.prototype,"href")');
+    expect(body).toContain("Element.prototype.setAttribute=function");
   });
 });
