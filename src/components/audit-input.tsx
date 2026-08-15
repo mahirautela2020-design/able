@@ -105,20 +105,34 @@ export function AuditInput() {
       return;
     }
 
-    // Upload modes: Figma (JSON body) / image / apk (multipart)
+    // Upload modes: Figma (JSON body) / image / apk (multipart) — all of
+    // these are session-gated server-side, so (like the URL mode above) we
+    // must attach the Supabase access token when one exists. Previously
+    // these fetches sent no Authorization header at all, so a signed-in
+    // user still got "Missing or invalid authorization header" here even
+    // though URL audits worked fine.
     setLoading(true);
     try {
+      const {
+        data: { session },
+      } = await (supabase?.auth.getSession() ?? Promise.resolve({ data: { session: null } }));
+      const authHeader: Record<string, string> = session
+        ? { Authorization: `Bearer ${session.access_token}` }
+        : {};
+
       if (mode === "figma") {
         if (!figmaInput.trim()) return toast.error("Enter a Figma file key or share URL");
         const res = await fetch("/api/audit/figma", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeader },
           body: JSON.stringify({ fileKey: figmaInput }),
         });
         const data = await res.json();
         if (!res.ok) {
           setResult({ error: data.error });
-          if (res.status === 401) toast.error(data.error);
+          if (res.status === 401) {
+            toast.error(session ? data.error : "Sign in to audit Figma files.");
+          }
           return;
         }
         setResult({ findings: data.findings, summary: data.summary });
@@ -136,12 +150,18 @@ export function AuditInput() {
           : mode === "ios"
             ? "/api/uploads/ipa"
             : "/api/uploads/image",
-        { method: "POST", body: form }
+        // Don't set Content-Type manually for FormData — the browser needs
+        // to add its own multipart boundary.
+        { method: "POST", body: form, headers: authHeader }
       );
       const data = await res.json();
       if (!res.ok) {
         setResult({ error: data.error });
-        if (res.status === 401) toast.error(data.error);
+        if (res.status === 401) {
+          toast.error(session ? data.error : "Sign in to analyze this file type.");
+        } else if (res.status === 422) {
+          toast.error(data.error);
+        }
         return;
       }
       setResult({
