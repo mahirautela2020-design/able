@@ -89,34 +89,29 @@ export async function buildReportHtml(auditId: string): Promise<string> {
     );
   }
 
-  const findingsRows: string[] = [];
-  for (const f of findings || []) {
-    findingsRows.push(
-      `<tr>
-        <td>${f.severity}</td>
-        <td>${f.wcag_criterion || "best-practice"}</td>
-        <td>${f.rule_title}</td>
-        <td>${f.failure_summary}</td>
-        <td>${f.bucket}</td>
-      </tr>`
-    );
-  }
-
-  // Evidence appendix: one entry per finding that has a screenshot, each on
-  // its own 16:9 print page. Emits the RAW stored evidence path (not a
-  // signed URL) — the PDF route's resolveSignedUrls() does a string
-  // substitution pass over this same HTML afterward, replacing each raw
-  // path with a short-lived signed URL so the image actually loads.
-  const evidenceEntries: string[] = [];
+  // Findings + evidence, merged into one entry per finding — a finding and
+  // its screenshot are one fact, not two ("here's what's wrong" and "here's
+  // proof" belong together, not in separate sections a reader has to cross-
+  // reference by WCAG number). Entries with a screenshot get their own 16:9
+  // print page; entries without one (most needs-review/keyboard findings —
+  // there's nothing to crop a screenshot of) render as a compact row.
+  // screenshot_crop_url/full_screenshot_url are emitted as the RAW stored
+  // path (not a signed URL) — the PDF route's resolveSignedUrls() does a
+  // string substitution pass over this same HTML afterward, replacing each
+  // raw path with a short-lived signed URL so the image actually loads.
+  const findingsEntries: string[] = [];
   for (const f of findings || []) {
     const imgUrl = f.screenshot_crop_url || f.full_screenshot_url;
-    if (!imgUrl) continue;
-    evidenceEntries.push(
-      `<div class="evidence-entry">
-        <h3>${escapeHtml(f.rule_title)} <span class="evidence-sc">${escapeHtml(f.wcag_criterion || "best-practice")}</span></h3>
-        <p class="meta">${escapeHtml(f.selector || "")}</p>
+    findingsEntries.push(
+      `<div class="finding-entry${imgUrl ? " has-evidence" : ""}">
+        <h3>
+          <span class="badge badge-severity-${escapeHtml(f.severity)}">${escapeHtml(f.severity)}</span>
+          ${escapeHtml(f.rule_title)}
+          <span class="evidence-sc">${escapeHtml(f.wcag_criterion || "best-practice")}</span>
+        </h3>
+        <p class="meta">${escapeHtml(f.selector || "")} · ${escapeHtml(f.bucket)}</p>
         <p>${escapeHtml(f.failure_summary || "")}</p>
-        <img src="${escapeHtml(imgUrl)}" alt="Screenshot evidence for ${escapeHtml(f.rule_title)}" class="evidence-img">
+        ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" alt="Screenshot evidence for ${escapeHtml(f.rule_title)}" class="evidence-img">` : `<p class="meta">No screenshot captured for this finding.</p>`}
       </div>`
     );
   }
@@ -141,8 +136,9 @@ export async function buildReportHtml(auditId: string): Promise<string> {
     .moderate { color: #ca8a04; }
     .minor { color: #2563eb; }
     .footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #e5e5e5; font-size: 0.75rem; color: #999; }
-    .evidence-entry { page-break-before: always; padding-top: 1rem; }
-    .evidence-entry h3 { font-size: 1.1rem; margin-bottom: 0.25rem; }
+    .finding-entry { padding: 1rem 0; border-bottom: 1px solid #e5e5e5; }
+    .finding-entry.has-evidence { page-break-before: always; padding-top: 1rem; border-bottom: none; }
+    .finding-entry h3 { font-size: 1.1rem; margin-bottom: 0.25rem; font-weight: 600; }
     .evidence-sc { font-family: monospace; font-weight: 400; color: #666; font-size: 0.85rem; }
     .evidence-img { max-width: 100%; max-height: 480px; object-fit: contain; border: 1px solid #e5e5e5; border-radius: 4px; margin-top: 0.5rem; }
     .badge { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
@@ -151,6 +147,10 @@ export async function buildReportHtml(auditId: string): Promise<string> {
     .badge-review { background: #fef9c3; color: #a16207; }
     .badge-manual { background: #e0e7ff; color: #4338ca; }
     .badge-na { background: #f3f4f6; color: #6b7280; }
+    .badge-severity-critical { background: #fee2e2; color: #b91c1c; }
+    .badge-severity-serious { background: #ffedd5; color: #c2410c; }
+    .badge-severity-moderate { background: #fef9c3; color: #a16207; }
+    .badge-severity-minor { background: #dbeafe; color: #1d4ed8; }
   </style>
 </head>
 <body>
@@ -174,19 +174,14 @@ export async function buildReportHtml(auditId: string): Promise<string> {
     ${needsReview.length} needs review · ${behavior.length} keyboard findings · ${bestPractice.length} best-practice
   </p>
 
+  <h2>Findings</h2>
+  ${findingsEntries.length > 0 ? findingsEntries.join("") : "<p>No findings recorded for this audit.</p>"}
+
   <h2>WCAG 2.2 Compliance Matrix</h2>
   <table>
-    <thead><tr><th>SC</th><th>Name</th><th>Level</th><th>Principle</th><th>Status</th><th>Findings</th></tr></thead>
+    <thead><tr><th>Success Criterion</th><th>Name</th><th>Level</th><th>Principle</th><th>Status</th><th>Findings</th></tr></thead>
     <tbody>${rows.join("")}</tbody>
   </table>
-
-  <h2>Findings</h2>
-  <table>
-    <thead><tr><th>Severity</th><th>WCAG</th><th>Rule</th><th>Summary</th><th>Bucket</th></tr></thead>
-    <tbody>${findingsRows.join("")}</tbody>
-  </table>
-
-  ${evidenceEntries.length > 0 ? `<h2>Evidence</h2>${evidenceEntries.join("")}` : ""}
 
   <p class="footer">
     Audited with ScanA11y 0.1 — Chromium headless. Fonts and rendering may differ from real browsers.
