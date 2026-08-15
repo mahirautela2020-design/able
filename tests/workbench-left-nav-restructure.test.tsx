@@ -48,8 +48,18 @@ describe("Workbench — left-column mode nav (regression: Inspect/Screen Reader 
       <Workbench auditId="audit-1" targetUrl="https://example.com" auditStatus="complete" findings={[]} />
     );
 
+    const header = screen.getByText("1. Perceivable").closest("button")!;
+    expect(header).toHaveAttribute("aria-expanded", "true");
+    // Content stays mounted (height-animated via CSS grid-rows, not
+    // unmounted) so a screen reader / find-in-page doesn't lose it, but the
+    // section reports itself collapsed and its wrapper is zeroed out.
     expect(screen.getByText("1.1.1")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("1. Perceivable"));
-    expect(screen.queryByText("1.1.1")).not.toBeInTheDocument();
+
+    fireEvent.click(header);
+
+    expect(header).toHaveAttribute("aria-expanded", "false");
+    const collapsedContent = screen.getByText("1.1.1");
+    const gridWrapper = collapsedContent.closest('[style*="grid-template-rows"]');
+    expect(gridWrapper).toHaveStyle({ gridTemplateRows: "0fr" });
   });
 });

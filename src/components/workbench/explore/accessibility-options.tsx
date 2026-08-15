@@ -470,7 +470,9 @@ export function AccessibilityOptionsPanel({
         <div
           ref={panelRef}
           data-testid="a11y-options-panel"
-          className="absolute bottom-20 right-4 z-40 w-80 max-h-[85%] overflow-y-auto rounded-lg border bg-background shadow-xl text-xs"
+          // Scales in from the FAB it opened from (bottom-right), rather than
+          // teleporting in — matches the "Dropdowns, selects" motion budget.
+          className="absolute bottom-20 right-4 z-40 w-80 max-h-[85%] overflow-y-auto rounded-lg border bg-background shadow-xl text-xs origin-bottom-right animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200 ease-out motion-reduce:animate-none"
         >
           <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/20 sticky top-0">
             <span className="font-semibold">Accessibility Options</span>
