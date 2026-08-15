@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Footer } from "@/components/footer";
 
 export const metadata: Metadata = {
   title: "Privacy Policy — ScanA11y",
@@ -6,6 +7,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicy() {
   return (
+    <>
     <div className="flex-1 w-full max-w-3xl mx-auto px-4 py-12 prose prose-neutral dark:prose-invert">
       <h1 className="text-3xl font-bold tracking-tight">Privacy Policy</h1>
       <p className="text-muted-foreground text-sm">Last updated: August 2026</p>
@@ -68,5 +70,7 @@ export default function PrivacyPolicy() {
         contact channel provided at the point of sign-up.
       </p>
     </div>
+    <Footer />
+    </>
   );
 }
