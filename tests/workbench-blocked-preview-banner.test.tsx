@@ -51,7 +51,7 @@ describe("Workbench — blocked-preview notice (regression: was duplicated acros
     expect(screen.getAllByText(/blocks embedding/i)).toHaveLength(1);
   });
 
-  it("the screenshot/live-preview toggle lives in that single row and still works", async () => {
+  it("the preview-source toggle switches between the audited screenshot and the interactive preview", async () => {
     stubFetchBlocked();
     render(
       <Workbench
@@ -68,7 +68,7 @@ describe("Workbench — blocked-preview notice (regression: was duplicated acros
       screen.getByAltText(/Full-page screenshot of https:\/\/www\.qantas\.com/i)
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Live preview"));
-    expect(screen.getByTitle(/Proxied preview of https:\/\/www\.qantas\.com/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Interactive"));
+    expect(screen.getByTitle(/Live preview of https:\/\/www\.qantas\.com/i)).toBeInTheDocument();
   });
 });

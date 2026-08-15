@@ -1,14 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getWcagRegistry, type WcagSuccessCriterion } from "@/engine/wcag-registry";
 import { supabase, authHeaders } from "@/lib/supabase/client";
-import { ExplorePanel } from "@/components/workbench/explore/explore-panel";
 import { ScreenReaderPanel } from "@/components/workbench/explore/screen-reader-panel";
+import { PreviewPane } from "@/components/workbench/preview-pane";
+import { InspectRail } from "@/components/workbench/explore/inspect-rail";
+import { useExplore } from "@/components/workbench/explore/use-explore";
+import {
+  AccessibilityOptionsPanel,
+  type Orientation,
+} from "@/components/workbench/explore/accessibility-options";
+
+type WorkbenchTab = "checklist" | "inspect" | "screen-reader" | "a11y";
 
 export interface WorkbenchFinding {
   id: string;
@@ -78,8 +86,9 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [levelFilter, setLevelFilter] = useState<"ALL" | "A" | "AA" | "AAA">("ALL");
   const [previewKey, setPreviewKey] = useState(0); // reload iframe
   const [frameBlocked, setFrameBlocked] = useState(false);
-  const [mainMode, setMainMode] = useState<"preview" | "explore" | "screen-reader">("preview");
-  const [showScreenshot, setShowScreenshot] = useState(false);
+  const [activeTab, setActiveTab] = useState<WorkbenchTab>("checklist");
+  const [orientation, setOrientation] = useState<Orientation>("landscape");
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [hasDownloadedPdf, setHasDownloadedPdf] = useState(false);
   const [rerunWarning, setRerunWarning] = useState<{ urlOverride?: string } | null>(null);
@@ -94,14 +103,18 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [progress, setProgress] = useState<Record<string, unknown> | null>(null);
   const [stopping, setStopping] = useState(false);
-  // Faithful preview (item: "render like a browser"): a server-side headless
-  // Chromium screenshot of the target, for sites the proxy can't fully render.
-  const [faithful, setFaithful] = useState(false);
-  const [renderUrl, setRenderUrl] = useState<string | null>(null);
-  const [renderState, setRenderState] = useState<"idle" | "loading" | "blocked" | "error">("idle");
 
   // Full WCAG 2.2 registry (86 SCs) — the checklist the user sees.
   const registry = useMemo(() => getWcagRegistry(), []);
+
+  // Shared Inspect/Accessibility controller — drives the single preview
+  // iframe (right column) so the left-column tools can act on it.
+  const ctrl = useExplore({
+    iframeRef,
+    targetUrl,
+    auditId,
+    enabled: activeTab === "inspect",
+  });
 
   // Live-poll while the audit is queued/running so the checklist fills in
   // as pages finish. Stops once complete/failed. Also ticks the clock so
@@ -352,43 +365,6 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
     }
   }
 
-  // Faithful preview: fetch a real-browser screenshot of the target. A JSON
-  // { blocked } response means the site is behind bot-detection (tier-3) —
-  // no server-side proxy can render it, so we say so plainly and keep the
-  // audit results, which don't depend on the preview, front and center.
-  async function loadFaithfulRender() {
-    setFaithful(true);
-    setRenderState("loading");
-    try {
-      const res = await fetch(`/api/preview-render?url=${encodeURIComponent(targetUrl)}`);
-      const ct = res.headers.get("content-type") || "";
-      if (ct.includes("application/json")) {
-        const j = await res.json().catch(() => ({}));
-        setRenderState(j.blocked ? "blocked" : "error");
-        return;
-      }
-      if (!res.ok) {
-        setRenderState("error");
-        return;
-      }
-      const blob = await res.blob();
-      setRenderUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return URL.createObjectURL(blob);
-      });
-      setRenderState("idle");
-    } catch {
-      setRenderState("error");
-    }
-  }
-
-  // Release the last object URL when the component unmounts.
-  useEffect(() => {
-    return () => {
-      if (renderUrl) URL.revokeObjectURL(renderUrl);
-    };
-  }, [renderUrl]);
-
   return (
     <div className="relative flex h-full border rounded-lg overflow-hidden bg-background">
       {/* ── LEFT: WCAG checklist ── */}
@@ -488,21 +464,22 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           )}
         </div>
 
-        {/* Mode nav: switches what the main (right) area shows. Checklist
-            stays visible in this column regardless of mode. */}
+        {/* Tab nav — each tab renders its content in THIS left column; the
+            right column always shows the shared live preview. */}
         <div className="flex border-b text-xs">
           {(
             [
-              { key: "preview", label: "Checklist" },
-              { key: "explore", label: "Inspect" },
+              { key: "checklist", label: "Checklist" },
+              { key: "inspect", label: "Inspect" },
               { key: "screen-reader", label: "Screen Reader" },
+              { key: "a11y", label: "Accessibility" },
             ] as const
           ).map((m) => (
             <button
               key={m.key}
-              onClick={() => setMainMode(m.key)}
+              onClick={() => setActiveTab(m.key)}
               className={`flex-1 py-2 px-1 font-medium transition-colors ${
-                mainMode === m.key
+                activeTab === m.key
                   ? "text-primary border-b-2 border-primary"
                   : "text-muted-foreground hover:text-foreground"
               }`}
@@ -512,6 +489,8 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           ))}
         </div>
 
+        {activeTab === "checklist" && (
+        <>
         {/* Level filter: which standard/conformance level to show */}
         <div className="flex border-b text-[11px]">
           {(["ALL", "A", "AA", "AAA"] as const).map((lvl) => (
@@ -606,6 +585,29 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
             Clear selection
           </button>
         </div>
+        </>
+        )}
+
+        {activeTab === "inspect" && (
+          <div className="flex-1 min-h-0">
+            <InspectRail ctrl={ctrl} />
+          </div>
+        )}
+        {activeTab === "screen-reader" && (
+          <div className="flex-1 min-h-0">
+            <ScreenReaderPanel auditId={auditId} />
+          </div>
+        )}
+        {activeTab === "a11y" && (
+          <div className="flex-1 min-h-0">
+            <AccessibilityOptionsPanel
+              variant="inline"
+              onApply={ctrl.handleApplyA11yProfile}
+              orientation={orientation}
+              onOrientationChange={setOrientation}
+            />
+          </div>
+        )}
       </aside>
 
       {/* ── RIGHT: live preview + findings ── */}
@@ -708,156 +710,16 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           </div>
         </div>
 
-        {/* Preview-blocked notice: single row (previously duplicated across
-            two stacked rows — a dismissible banner plus a second, permanent
-            toolbar with the same message). Owns the proxy-vs-screenshot
-            toggle and "Open live site" link — not dismissible, since
-            dismissing didn't change anything about the underlying block and
-            previously just hid the only place those controls lived. */}
-        {frameBlocked && mainMode === "preview" && (
-          <div className="flex items-center justify-between gap-3 px-3 py-2 border-b bg-amber-50 dark:bg-amber-950/40 text-xs">
-            <p className="text-amber-800 dark:text-amber-300 min-w-0 truncate">
-              <span className="font-medium">{targetUrl}</span> blocks embedding — previewing via
-              proxy{firstScreenshot ? " (or view the captured screenshot)" : ""}.
-            </p>
-            <div className="flex items-center gap-2 shrink-0">
-              {firstScreenshot && (
-                <button
-                  onClick={() => {
-                    setFaithful(false);
-                    setShowScreenshot((s) => !s);
-                  }}
-                  className={`px-2 py-1 rounded border transition-colors ${
-                    showScreenshot && !faithful
-                      ? "bg-primary text-primary-foreground border-transparent"
-                      : "border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40"
-                  }`}
-                >
-                  {showScreenshot && !faithful ? "Live preview" : "Audited screenshot"}
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  if (faithful) {
-                    setFaithful(false);
-                  } else {
-                    setShowScreenshot(false);
-                    loadFaithfulRender();
-                  }
-                }}
-                className={`px-2 py-1 rounded border transition-colors ${
-                  faithful
-                    ? "bg-primary text-primary-foreground border-transparent"
-                    : "border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40"
-                }`}
-                title="Render the page with a real headless browser (like Claude does)"
-              >
-                {faithful ? "Back to proxy" : "Render like a browser"}
-              </button>
-              <a
-                href={targetUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-2 py-1 rounded border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
-              >
-                Open live site
-              </a>
-            </div>
-          </div>
-        )}
-
-        {mainMode === "explore" ? (
-          <div className="flex-1 min-h-0 bg-white">
-            <ExplorePanel targetUrl={targetUrl} auditId={auditId} />
-          </div>
-        ) : mainMode === "screen-reader" ? (
-          <div className="flex-1 min-h-0 bg-white">
-            <ScreenReaderPanel auditId={auditId} />
-          </div>
-        ) : (
-        <>
-        {/* Preview: sandboxed live iframe. For sites that block embedding
-            (X-Frame-Options/CSP), we PROXY the page through our own origin
-            (/api/preview-proxy) — the iframe sees OUR headers, so the
-            browser renders it. The audited screenshot stays available via
-            the "Audited screenshot" toggle in the banner above. */}
-        <div className="flex-1 min-h-0 bg-white flex relative">
-          <iframe
-            key={previewKey}
-            src={
-              frameBlocked
-                ? `/api/preview-proxy?url=${encodeURIComponent(targetUrl)}`
-                : targetUrl
-            }
-            title={`Live preview of ${targetUrl}`}
-            sandbox="allow-scripts allow-forms allow-popups"
-            className={`w-full h-full border-0 ${frameBlocked ? "hidden" : ""}`}
-          />
-          {frameBlocked && (
-            <div className="absolute inset-0 flex flex-col bg-background">
-              {faithful ? (
-                <div className="flex-1 overflow-auto">
-                  {renderState === "loading" && (
-                    <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
-                      Rendering a real-browser snapshot…
-                    </div>
-                  )}
-                  {renderState === "blocked" && (
-                    <div className="h-full flex flex-col items-center justify-center gap-2 p-6 text-center">
-                      <p className="text-sm font-medium">Live preview isn&apos;t available for this site</p>
-                      <p className="text-xs text-muted-foreground max-w-sm">
-                        <span className="font-medium">{targetUrl}</span> is behind bot-detection
-                        (e.g. Cloudflare / Akamai), which blocks every server-side preview —
-                        including a real headless browser. This does not affect the audit: results
-                        appear in the checklist on the left as pages finish.
-                      </p>
-                      <a
-                        href={targetUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs underline"
-                      >
-                        Open the live site in a new tab
-                      </a>
-                    </div>
-                  )}
-                  {renderState === "error" && (
-                    <div className="h-full flex items-center justify-center text-xs text-red-600 dark:text-red-400 px-6 text-center">
-                      Couldn&apos;t render a snapshot. Try the proxy preview or open the live site.
-                    </div>
-                  )}
-                  {renderState === "idle" && renderUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={renderUrl}
-                      alt={`Real-browser rendered snapshot of ${targetUrl}`}
-                      className="w-full"
-                    />
-                  )}
-                </div>
-              ) : showScreenshot && firstScreenshot ? (
-                <div className="flex-1 overflow-auto">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={firstScreenshot}
-                    alt={`Full-page screenshot of ${targetUrl} captured during audit`}
-                    className="w-full"
-                  />
-                </div>
-              ) : (
-                <div className="flex-1 overflow-auto">
-                  <iframe
-                    src={`/api/preview-proxy?url=${encodeURIComponent(targetUrl)}`}
-                    title={`Proxied preview of ${targetUrl}`}
-                    className="w-full h-full border-0"
-                  />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        </>
-        )}
+        <PreviewPane
+          targetUrl={targetUrl}
+          previewKey={previewKey}
+          iframeRef={iframeRef}
+          interactive={activeTab === "inspect"}
+          ctrl={ctrl}
+          orientation={orientation}
+          firstScreenshot={firstScreenshot}
+          frameBlocked={frameBlocked}
+        />
 
         {/* Findings drawer for selected SC */}
         {activeSc && (
