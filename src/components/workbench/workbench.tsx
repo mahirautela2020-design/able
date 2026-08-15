@@ -48,6 +48,9 @@ export const PRINCIPLES = [
 
 type LevelFilter = "ALL" | "A" | "AA" | "AAA";
 
+const MIN_LEFT_WIDTH = 260;
+const MAX_LEFT_WIDTH = 720;
+
 // wcag-registry.ts stores `principle` as the full word (e.g. "Perceivable"),
 // while the checklist tabs key off the numeric PRINCIPLES id — map through
 // principleName rather than comparing the two directly.
@@ -102,6 +105,29 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [progress, setProgress] = useState<Record<string, unknown> | null>(null);
   const [stopping, setStopping] = useState(false);
+
+  // Draggable left-column width (like Claude's split-pane resize). Persisted
+  // across sessions so a user's preferred layout sticks. Clamped so the
+  // checklist column can't crowd out the preview or shrink to nothing.
+  // Starts at the fixed default (matching SSR, which has no `window`) and
+  // applies the saved width after mount — reading localStorage in the
+  // initializer would make the client's first render disagree with the
+  // server-rendered HTML (a hydration mismatch React won't patch up).
+  const [leftWidth, setLeftWidth] = useState(320);
+  const [resizing, setResizing] = useState(false);
+  const workbenchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const saved = Number(window.localStorage.getItem("able:workbench-left-width"));
+    if (Number.isFinite(saved) && saved >= MIN_LEFT_WIDTH && saved <= MAX_LEFT_WIDTH) {
+      // localStorage only exists on the client, so this can't run during
+      // SSR/hydration — it necessarily happens in an effect, one render
+      // after mount. Deliberate exception to the usual "don't setState
+      // synchronously in an effect" guidance.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLeftWidth(saved);
+    }
+  }, []);
 
   // Full WCAG 2.2 registry (86 SCs) — the checklist the user sees.
   const registry = useMemo(() => getWcagRegistry(), []);
@@ -344,6 +370,57 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
     }
   }
 
+  // Drag-to-resize the left column (mirrors Claude's split-pane drag). The
+  // listeners are attached to `document` only while dragging so normal
+  // mouse movement elsewhere on the page costs nothing.
+  function handleResizeStart(e: React.PointerEvent) {
+    e.preventDefault();
+    setResizing(true);
+    const container = workbenchRef.current;
+    if (!container) return;
+    const containerLeft = container.getBoundingClientRect().left;
+
+    function onMove(ev: PointerEvent) {
+      const next = Math.min(
+        MAX_LEFT_WIDTH,
+        Math.max(MIN_LEFT_WIDTH, ev.clientX - containerLeft)
+      );
+      setLeftWidth(next);
+    }
+    function onUp() {
+      setResizing(false);
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      setLeftWidth((w) => {
+        window.localStorage.setItem("able:workbench-left-width", String(w));
+        return w;
+      });
+    }
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  }
+
+  // Keyboard resize (arrow keys) for the drag handle — a mouse-only resize
+  // control would itself be an accessibility gap in an accessibility tool.
+  function handleResizeKeyDown(e: React.KeyboardEvent) {
+    const step = e.shiftKey ? 40 : 16;
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      setLeftWidth((w) => {
+        const next = Math.max(MIN_LEFT_WIDTH, w - step);
+        window.localStorage.setItem("able:workbench-left-width", String(next));
+        return next;
+      });
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      setLeftWidth((w) => {
+        const next = Math.min(MAX_LEFT_WIDTH, w + step);
+        window.localStorage.setItem("able:workbench-left-width", String(next));
+        return next;
+      });
+    }
+  }
+
   // Stop a queued/running audit. The server marks it failed/CANCELLED and the
   // scan pipeline bails between pages; we optimistically reflect that here so
   // the UI updates immediately (polling would otherwise catch it next tick).
@@ -365,9 +442,17 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   }
 
   return (
-    <div className="relative flex h-full border rounded-lg overflow-hidden bg-background">
+    <div
+      ref={workbenchRef}
+      className={`relative flex h-full border rounded-lg overflow-hidden bg-background ${
+        resizing ? "select-none cursor-col-resize" : ""
+      }`}
+    >
       {/* ── LEFT: WCAG checklist ── */}
-      <aside className="w-[320px] shrink-0 border-r flex flex-col bg-muted/20">
+      <aside
+        className="shrink-0 border-r flex flex-col bg-muted/20"
+        style={{ width: leftWidth }}
+      >
         <div className="p-3 border-b">
           <h2 className="text-sm font-semibold">Accessibility Checklist</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -643,6 +728,21 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           </div>
         )}
       </aside>
+
+      {/* Drag handle — resizes the left column. Keyboard-operable (arrow
+          keys) so mouse-only users aren't the only ones who can resize. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize checklist column"
+        aria-valuemin={MIN_LEFT_WIDTH}
+        aria-valuemax={MAX_LEFT_WIDTH}
+        aria-valuenow={leftWidth}
+        tabIndex={0}
+        onPointerDown={handleResizeStart}
+        onKeyDown={handleResizeKeyDown}
+        className="w-1.5 shrink-0 cursor-col-resize border-r hover:bg-primary/30 focus-visible:bg-primary/40 focus-visible:outline-none transition-colors"
+      />
 
       {/* ── RIGHT: live preview + findings ── */}
       <main className="flex-1 flex flex-col min-w-0">
