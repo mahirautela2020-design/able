@@ -38,6 +38,8 @@ const { getAudit } = vi.hoisted(() => ({
 vi.mock("@/lib/supabase/server", () => ({
   getAudit,
   createSignedUrl: vi.fn(async (path: string) => `https://signed.example.com/${path}`),
+  downloadEvidence: vi.fn(async () => null),
+  uploadEvidence: vi.fn(async () => "uploaded"),
   supabase: {
     from: (table: string) => {
       if (table === "audits") {
