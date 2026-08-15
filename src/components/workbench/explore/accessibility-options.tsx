@@ -18,6 +18,8 @@ export interface AccessibilityProfileSettings {
   readingGuide: boolean;
   readingMask: boolean;
   tooltips: boolean;
+  focusMode: boolean;
+  textMagnify: boolean;
 }
 
 export type Orientation = "portrait" | "landscape";
@@ -47,6 +49,8 @@ export const DEFAULT_A11Y_SETTINGS: AccessibilityProfileSettings = {
   readingGuide: false,
   readingMask: false,
   tooltips: false,
+  focusMode: false,
+  textMagnify: false,
 };
 
 interface PresetProfile {
@@ -55,17 +59,34 @@ interface PresetProfile {
   settings: Partial<AccessibilityProfileSettings>;
 }
 
+// Matches the 8 profiles in UX4G's own "Accessibility Profile" dropdown
+// (ux4g.gov.in, Ctrl+F2 widget) verbatim, plus a "None" reset.
 const PRESETS: PresetProfile[] = [
   { id: "none", label: "None", settings: DEFAULT_A11Y_SETTINGS },
+  {
+    id: "seizure-safe",
+    label: "Seizure Safe",
+    settings: { reducedMotion: true, saturation: "low" },
+  },
+  {
+    id: "color-blindness",
+    label: "Color Blindness",
+    settings: { saturation: "grayscale", contrast: "high" },
+  },
   {
     id: "low-vision",
     label: "Low Vision",
     settings: { textScale: 150, contrast: "high", bigCursor: true },
   },
   {
-    id: "high-contrast",
-    label: "High Contrast",
-    settings: { contrast: "high" },
+    id: "vision-impaired",
+    label: "Visually Impaired",
+    settings: { textScale: 200, contrast: "high", highlightLinks: true, bigCursor: true },
+  },
+  {
+    id: "senior-citizens",
+    label: "Senior Citizens",
+    settings: { textScale: 125, lineHeight: "loose", bigCursor: true },
   },
   {
     id: "dyslexia",
@@ -73,24 +94,14 @@ const PRESETS: PresetProfile[] = [
     settings: { dyslexiaFont: true, letterSpacing: "wide", lineHeight: "loose", textAlign: "left" },
   },
   {
+    id: "motor-impairment",
+    label: "Motor Impairment",
+    settings: { bigCursor: true, focusMode: true, reducedMotion: true },
+  },
+  {
     id: "adhd",
-    label: "ADHD",
-    settings: { readingMask: true, reducedMotion: true },
-  },
-  {
-    id: "seizure-safe",
-    label: "Seizure Safe",
-    settings: { reducedMotion: true, saturation: "low" },
-  },
-  {
-    id: "vision-impaired",
-    label: "Vision Impaired",
-    settings: { textScale: 175, contrast: "high", highlightLinks: true },
-  },
-  {
-    id: "blind",
-    label: "Screen Reader",
-    settings: { highlightLinks: true },
+    label: "Cognitive / ADHD",
+    settings: { readingMask: true, reducedMotion: true, focusMode: true },
   },
 ];
 
@@ -357,6 +368,24 @@ export function AccessibilityOptionsPanel({
                     onChange={(e) => updateSettings({ tooltips: e.target.checked })}
                   />
                   <span>Show tooltips</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="a11y-focus-mode"
+                    checked={settings.focusMode}
+                    onChange={(e) => updateSettings({ focusMode: e.target.checked })}
+                  />
+                  <span>Focus mode (stronger focus outline)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="a11y-text-magnify"
+                    checked={settings.textMagnify}
+                    onChange={(e) => updateSettings({ textMagnify: e.target.checked })}
+                  />
+                  <span>Text magnify (enlarge text on hover)</span>
                 </label>
               </div>
             </section>
