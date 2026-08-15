@@ -1,4 +1,5 @@
 import { insertAudit, getFindingsForAudit } from "@/lib/supabase/server";
+import { inngest } from "@/inngest/client";
 
 export interface McpStartAuditInput {
   url: string;
@@ -44,6 +45,10 @@ export interface McpExportReportOutput {
 
 export async function startAudit(input: McpStartAuditInput): Promise<McpStartAuditOutput> {
   const auditId = await insertAudit(input.url, input.config || {});
+  await inngest.send({
+    name: "audit/url",
+    data: { auditId, url: input.url },
+  });
   return { auditId, status: "queued" };
 }
 

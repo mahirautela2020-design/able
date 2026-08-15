@@ -1,5 +1,6 @@
-import { supabase, createSignedUrl } from "@/lib/supabase/server";
+import { supabase, createSignedUrl, getAudit } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
+import { getClientIp } from "@/lib/http";
 import { buildReportHtml } from "@/lib/report";
 
 export const maxDuration = 60;
@@ -22,9 +23,36 @@ export async function GET(
   try {
     const { id } = await params;
 
-    // Isolation: PDF exports are private — a valid session is required.
+    // Isolation: PDF exports are private. Owner-scoped, matching the check
+    // in /api/audits/[id]/report and /api/audits/[id]/sr-preview — a missing
+    // audit and an audit that exists but isn't yours get the SAME 401 so a
+    // caller can't enumerate valid audit ids by probing for 404 vs 401.
+    let auditRow: Awaited<ReturnType<typeof getAudit>> | null = null;
+    try {
+      auditRow = await getAudit(id);
+    } catch {
+      auditRow = null;
+    }
+    if (!auditRow) {
+      return Response.json(
+        { error: "Missing or invalid authorization header" },
+        { status: 401 }
+      );
+    }
+
     const auth = await requireSession(request);
-    if (!auth.ok) return auth.response;
+    const reqIp = getClientIp(request);
+    const isOwner = auth.ok
+      ? auditRow.created_by
+        ? auditRow.created_by === auth.userId
+        : !!reqIp && auditRow.created_ip === reqIp
+      : !!reqIp && auditRow.created_ip === reqIp;
+    if (!isOwner) {
+      return Response.json(
+        { error: "Missing or invalid authorization header" },
+        { status: 401 }
+      );
+    }
 
     // Regenerate the report HTML from the DB (same builder the pipeline uses)
     const html = await buildReportHtml(id);

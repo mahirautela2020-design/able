@@ -36,6 +36,7 @@ export function NvdaPanel({ auditId }: { auditId: string }) {
     setFailed(false);
     try {
       const res = await fetch(`/api/audits/${auditId}/nvda`, { method: "POST" });
+      if (!res.ok) throw new Error(`NVDA check failed (${res.status})`);
       const json = (await res.json()) as NvdaResponse;
       setResult(json);
     } catch {

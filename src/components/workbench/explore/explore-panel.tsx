@@ -20,6 +20,11 @@ import { ContrastFix } from "./contrast-fix";
 import { KeyboardReplay } from "./keyboard-replay";
 import { CvdOverlay } from "./cvd-overlay";
 import { AxTreePanel } from "./ax-tree-panel";
+import {
+  AccessibilityOptionsPanel,
+  type AccessibilityProfileSettings,
+  type Orientation,
+} from "./accessibility-options";
 
 interface AbleBridge {
   inspect: (x: number, y: number) => InspectedElement | null;
@@ -30,6 +35,7 @@ interface AbleBridge {
   highlightByRoleName: (role: string, name: string) => boolean;
   focusEl: (selector: string) => boolean;
   setFilter: (filter: string) => boolean;
+  applyAccessibilityProfile: (settings: AccessibilityProfileSettings) => boolean;
 }
 
 interface ExplorePanelProps {
@@ -82,6 +88,8 @@ export function ExplorePanel({ targetUrl, auditId }: ExplorePanelProps) {
   const [axSnapshot, setAxSnapshot] = useState<AxSnapshot | null>(null);
   const [axLoading, setAxLoading] = useState(true);
   const [axError, setAxError] = useState<string | null>(null);
+
+  const [orientation, setOrientation] = useState<Orientation>("landscape");
 
   const getBridge = useCallback((): AbleBridge | null => {
     const win = iframeRef.current?.contentWindow;
@@ -199,11 +207,21 @@ export function ExplorePanel({ targetUrl, auditId }: ExplorePanelProps) {
       body: JSON.stringify({ url: targetUrl }),
     })
       .then(async (res) => {
-        const json = await res.json();
+        // res.ok must be checked BEFORE parsing: a platform-level function
+        // crash/timeout (e.g. Chromium failing to launch on a constrained
+        // serverless runtime) returns a non-JSON error page, not this
+        // route's own JSON error shape — parsing that unconditionally threw
+        // a raw "Unexpected token..." message straight into the UI.
         if (!res.ok) {
-          throw new Error(json.error || `Snapshot failed (${res.status})`);
+          const message = await res
+            .json()
+            .then((j) => j.error)
+            .catch(() => null);
+          throw new Error(message || `Snapshot failed (${res.status})`);
         }
-        return json;
+        return res.json().catch(() => {
+          throw new Error("Snapshot failed (invalid response)");
+        });
       })
       .then((json) => {
         if (!cancelled) setAxSnapshot(json.snapshot ?? null);
@@ -226,17 +244,38 @@ export function ExplorePanel({ targetUrl, auditId }: ExplorePanelProps) {
     [getBridge]
   );
 
+  const handleApplyA11yProfile = useCallback(
+    (settings: AccessibilityProfileSettings) => {
+      getBridge()?.applyAccessibilityProfile(settings);
+    },
+    [getBridge]
+  );
+
   return (
     <div className="flex h-full border rounded-lg overflow-hidden bg-background">
       {/* Preview + overlays */}
       <div className="flex-1 relative min-w-0 bg-white">
-        <iframe
-          ref={iframeRef}
-          src={resolveIframeSrc(targetUrl)}
-          title="Explore preview"
-          sandbox="allow-scripts allow-same-origin allow-forms"
-          className={`w-full h-full border-0 ${pickerActive && !pickerDisabled ? "pointer-events-none" : ""}`}
-          onLoad={handleLoad}
+        {/* Orientation Adjustment is simulated by constraining the preview's
+            own container to a phone-portrait aspect ratio — an iframe can't
+            truly rotate the target device or its viewport meta. */}
+        <div
+          className={orientation === "portrait" ? "h-full mx-auto" : "w-full h-full"}
+          style={orientation === "portrait" ? { width: 420, maxWidth: "100%" } : undefined}
+        >
+          <iframe
+            ref={iframeRef}
+            src={resolveIframeSrc(targetUrl)}
+            title="Explore preview"
+            sandbox="allow-scripts allow-same-origin allow-forms"
+            className={`w-full h-full border-0 ${pickerActive && !pickerDisabled ? "pointer-events-none" : ""}`}
+            onLoad={handleLoad}
+          />
+        </div>
+
+        <AccessibilityOptionsPanel
+          onApply={handleApplyA11yProfile}
+          orientation={orientation}
+          onOrientationChange={setOrientation}
         />
 
         {/* Picker overlay (captures pointer coords when active) */}

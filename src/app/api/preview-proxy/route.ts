@@ -47,6 +47,13 @@ export async function GET(request: NextRequest) {
         "user-agent": browserUa,
         accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "accept-language": "en-US,en;q=0.9",
+        // A same-origin-looking navigation reduces false-positive WAF/bot
+        // rejections on sites that check these — this is still a bounded
+        // fidelity improvement, not an attempt to defeat real bot
+        // detection (Cloudflare/Akamai challenge pages etc. will still
+        // never render through any server-side proxy, and that's fine).
+        referer: `${target.origin}/`,
+        "sec-fetch-mode": "navigate",
       },
       signal: AbortSignal.timeout(15000),
     });
@@ -75,11 +82,32 @@ export async function GET(request: NextRequest) {
 
     // Inject <base href> so relative/absolute subresources resolve against
     // the REAL site (we only proxy the document; assets load directly).
+    // A site's own <base> tag is usually a relative or path-only href
+    // (meant to be resolved against ITS OWN url, not ours) — leaving that
+    // as-is under our proxy origin resolves every relative asset wrong.
+    // Only keep an existing tag if it's already a valid absolute URL.
     const origin = target.origin;
-    if (!/<base\s/i.test(html)) {
-      html = html.replace(/<head([^>]*)>/i, `<head$1><base href="${origin}/">`);
-    } else {
-      // Some sites set their own <base> — leave it (their call).
+    // Match any existing <base> tag (with or without href — e.g. a
+    // target="_blank"-only base is valid HTML) so we replace it in place
+    // rather than leaving it and inserting a second <base>.
+    const baseMatch = html.match(/<base\b[^>]*>/i);
+    const baseHrefMatch = baseMatch ? baseMatch[0].match(/href=["']([^"']*)["']/i) : null;
+    // Protocol-relative hrefs ("//cdn.example.com/") are also valid
+    // absolute-host URLs, not just http(s)://.
+    const hasValidAbsoluteBase = !!baseHrefMatch && /^(https?:)?\/\//i.test(baseHrefMatch[1]);
+    if (!hasValidAbsoluteBase) {
+      const newBaseTag = `<base href="${origin}/">`;
+      if (baseMatch) {
+        html = html.replace(baseMatch[0], newBaseTag);
+      } else if (/<head[^>]*>/i.test(html)) {
+        html = html.replace(/<head([^>]*)>/i, `<head$1>${newBaseTag}`);
+      } else if (/<html[^>]*>/i.test(html)) {
+        // Malformed page with no <head> at all — still inject one so
+        // relative assets don't silently resolve against our own origin.
+        html = html.replace(/<html([^>]*)>/i, `<html$1><head>${newBaseTag}</head>`);
+      } else {
+        html = `<head>${newBaseTag}</head>${html}`;
+      }
     }
 
     // Make our response iframe-able: we simply don't set the blocking
