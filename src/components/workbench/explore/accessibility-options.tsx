@@ -1,12 +1,23 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CVD_FILTERS, CVD_LABELS, CVD_TYPES } from "@/lib/cvd";
 
 export interface AccessibilityProfileSettings {
-  filter: string;
+  profile: string;
+  contrast: "none" | "dark" | "light" | "high" | "invert";
+  saturation: "none" | "low" | "high" | "grayscale";
   textScale: number;
+  lineHeight: "none" | "loose" | "loosest";
+  letterSpacing: "none" | "wide" | "wider";
+  dyslexiaFont: boolean;
+  textAlign: "none" | "left" | "center";
+  highlightLinks: boolean;
+  hideImages: boolean;
   reducedMotion: boolean;
+  bigCursor: boolean;
+  readingGuide: boolean;
+  readingMask: boolean;
+  tooltips: boolean;
 }
 
 export type Orientation = "portrait" | "landscape";
@@ -17,59 +28,78 @@ interface AccessibilityOptionsPanelProps {
   onOrientationChange: (orientation: Orientation) => void;
 }
 
-const DEFAULT_SETTINGS: AccessibilityProfileSettings = {
-  filter: "none",
+export const DEFAULT_A11Y_SETTINGS: AccessibilityProfileSettings = {
+  profile: "none",
+  contrast: "none",
+  saturation: "none",
   textScale: 100,
+  lineHeight: "none",
+  letterSpacing: "none",
+  dyslexiaFont: false,
+  textAlign: "none",
+  highlightLinks: false,
+  hideImages: false,
   reducedMotion: false,
+  bigCursor: false,
+  readingGuide: false,
+  readingMask: false,
+  tooltips: false,
 };
 
-const DISPLAY_FILTERS: { id: string; label: string; filter: string }[] = [
-  { id: "none", label: "None", filter: "none" },
-  { id: "high-contrast", label: "High contrast", filter: "contrast(1.8) grayscale(0.3)" },
-  { id: "invert", label: "Invert colors", filter: "invert(1) hue-rotate(180deg)" },
-  { id: "grayscale", label: "Grayscale", filter: "grayscale(1)" },
-  ...CVD_TYPES.map((t) => ({ id: t, label: CVD_LABELS[t], filter: CVD_FILTERS[t] })),
-];
-
-const TEXT_SCALES = [100, 125, 150, 175];
-
-interface Profile {
+interface PresetProfile {
   id: string;
   label: string;
-  settings: AccessibilityProfileSettings;
+  settings: Partial<AccessibilityProfileSettings>;
 }
 
-const PROFILES: Profile[] = [
-  { id: "default", label: "Default", settings: DEFAULT_SETTINGS },
+const PRESETS: PresetProfile[] = [
+  { id: "none", label: "None", settings: DEFAULT_A11Y_SETTINGS },
   {
     id: "low-vision",
     label: "Low Vision",
-    settings: { filter: "contrast(1.3)", textScale: 150, reducedMotion: false },
+    settings: { textScale: 150, contrast: "high", bigCursor: true },
   },
   {
     id: "high-contrast",
     label: "High Contrast",
-    settings: { filter: "contrast(1.8) grayscale(0.3)", textScale: 100, reducedMotion: false },
+    settings: { contrast: "high" },
   },
   {
-    id: "reduced-motion",
-    label: "Reduced Motion",
-    settings: { filter: "none", textScale: 100, reducedMotion: true },
+    id: "dyslexia",
+    label: "Dyslexia",
+    settings: { dyslexiaFont: true, letterSpacing: "wide", lineHeight: "loose", textAlign: "left" },
   },
   {
-    id: "larger-text",
-    label: "Larger Text",
-    settings: { filter: "none", textScale: 150, reducedMotion: false },
+    id: "adhd",
+    label: "ADHD",
+    settings: { readingMask: true, reducedMotion: true },
+  },
+  {
+    id: "seizure-safe",
+    label: "Seizure Safe",
+    settings: { reducedMotion: true, saturation: "low" },
+  },
+  {
+    id: "vision-impaired",
+    label: "Vision Impaired",
+    settings: { textScale: 175, contrast: "high", highlightLinks: true },
+  },
+  {
+    id: "blind",
+    label: "Screen Reader",
+    settings: { highlightLinks: true },
   },
 ];
 
+const TEXT_SCALES = [100, 125, 150, 175, 200];
+
 /**
  * "Accessibility Options" FAB + panel (Ctrl+F2), modeled on the
- * UX4G-style accessibility widget — Profile presets, Color Contrast,
- * Color Adjustment, Orientation Adjustment. Applies ONLY to our own
- * proxied preview iframe via the __ableInspect bridge's
- * applyAccessibilityProfile — a testing/demo tool, never injected onto
- * the real target site.
+ * UX4G-style accessibility widget. Provides comprehensive accessibility
+ * adjustments with presets (profiles), color, text, content, and aid controls.
+ * Applies ONLY to the proxied preview iframe via the __ableInspect bridge's
+ * applyAccessibilityProfile — a testing/demo tool, never injected onto the
+ * real target site.
  */
 export function AccessibilityOptionsPanel({
   onApply,
@@ -77,8 +107,8 @@ export function AccessibilityOptionsPanel({
   onOrientationChange,
 }: AccessibilityOptionsPanelProps) {
   const [open, setOpen] = useState(false);
-  const [settings, setSettings] = useState<AccessibilityProfileSettings>(DEFAULT_SETTINGS);
-  const [activeProfile, setActiveProfile] = useState("default");
+  const [settings, setSettings] = useState<AccessibilityProfileSettings>(DEFAULT_A11Y_SETTINGS);
+  const [activeProfile, setActiveProfile] = useState("none");
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -96,24 +126,15 @@ export function AccessibilityOptionsPanel({
     return () => window.removeEventListener("keydown", handleKeydown);
   }, []);
 
-  function applyProfile(profile: Profile) {
-    setActiveProfile(profile.id);
-    setSettings(profile.settings);
+  function applyPreset(preset: PresetProfile) {
+    setActiveProfile(preset.id);
+    const newSettings = { ...DEFAULT_A11Y_SETTINGS, ...preset.settings };
+    setSettings(newSettings);
   }
 
-  function setFilter(filter: string) {
+  function updateSettings(updates: Partial<AccessibilityProfileSettings>) {
     setActiveProfile("custom");
-    setSettings((s) => ({ ...s, filter }));
-  }
-
-  function setTextScale(textScale: number) {
-    setActiveProfile("custom");
-    setSettings((s) => ({ ...s, textScale }));
-  }
-
-  function toggleReducedMotion() {
-    setActiveProfile("custom");
-    setSettings((s) => ({ ...s, reducedMotion: !s.reducedMotion }));
+    setSettings((s) => ({ ...s, ...updates }));
   }
 
   return (
@@ -132,9 +153,9 @@ export function AccessibilityOptionsPanel({
         <div
           ref={panelRef}
           data-testid="a11y-options-panel"
-          className="absolute bottom-20 right-4 z-40 w-72 max-h-[70%] overflow-y-auto rounded-lg border bg-background shadow-xl text-xs"
+          className="absolute bottom-20 right-4 z-40 w-80 max-h-[85%] overflow-y-auto rounded-lg border bg-background shadow-xl text-xs"
         >
-          <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/20">
+          <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/20 sticky top-0">
             <span className="font-semibold">Accessibility Options</span>
             <button
               onClick={() => setOpen(false)}
@@ -145,16 +166,17 @@ export function AccessibilityOptionsPanel({
             </button>
           </div>
 
-          <div className="p-3 space-y-4">
+          <div className="p-3 space-y-3">
+            {/* Profiles */}
             <section>
-              <h4 className="font-semibold mb-1.5">Accessibility Profile</h4>
+              <h4 className="font-semibold mb-1.5">Profiles</h4>
               <div className="grid grid-cols-2 gap-1.5">
-                {PROFILES.map((p) => (
+                {PRESETS.map((p) => (
                   <button
                     key={p.id}
-                    data-testid={`a11y-profile-${p.id}`}
-                    onClick={() => applyProfile(p)}
-                    className={`px-2 py-1.5 rounded border transition-colors text-left ${
+                    data-testid={`a11y-preset-${p.id}`}
+                    onClick={() => applyPreset(p)}
+                    className={`px-2 py-1.5 rounded border text-left transition-colors text-xs ${
                       activeProfile === p.id
                         ? "bg-primary text-primary-foreground border-transparent"
                         : "hover:bg-accent/50"
@@ -166,67 +188,213 @@ export function AccessibilityOptionsPanel({
               </div>
             </section>
 
-            <section>
-              <h4 className="font-semibold mb-1.5">Color Contrast &amp; Adjustment</h4>
-              <select
-                data-testid="a11y-filter-select"
-                value={settings.filter}
-                onChange={(e) => setFilter(e.target.value)}
-                className="w-full px-2 py-1.5 rounded border bg-background"
-              >
-                {DISPLAY_FILTERS.map((f) => (
-                  <option key={f.id} value={f.filter}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
-              <p className="text-[10px] text-muted-foreground mt-1">
-                Simulated in this preview only — verify with real users before shipping.
-              </p>
-            </section>
-
-            <section>
-              <h4 className="font-semibold mb-1.5">Text Size</h4>
-              <div className="flex gap-1.5">
-                {TEXT_SCALES.map((scale) => (
-                  <button
-                    key={scale}
-                    data-testid={`a11y-text-scale-${scale}`}
-                    onClick={() => setTextScale(scale)}
-                    className={`flex-1 px-1.5 py-1 rounded border transition-colors ${
-                      settings.textScale === scale
-                        ? "bg-primary text-primary-foreground border-transparent"
-                        : "hover:bg-accent/50"
-                    }`}
+            {/* Color */}
+            <section className="border-t pt-2">
+              <h4 className="font-semibold mb-1.5">Color</h4>
+              <div className="space-y-1.5">
+                <div>
+                  <label className="block text-[10px] font-medium mb-1">Contrast</label>
+                  <select
+                    data-testid="a11y-contrast"
+                    value={settings.contrast}
+                    onChange={(e) =>
+                      updateSettings({ contrast: e.target.value as AccessibilityProfileSettings["contrast"] })
+                    }
+                    className="w-full px-2 py-1.5 rounded border bg-background text-xs"
                   >
-                    {scale}%
-                  </button>
-                ))}
+                    <option value="none">None</option>
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
+                    <option value="high">High</option>
+                    <option value="invert">Invert</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium mb-1">Saturation</label>
+                  <select
+                    data-testid="a11y-saturation"
+                    value={settings.saturation}
+                    onChange={(e) =>
+                      updateSettings({ saturation: e.target.value as AccessibilityProfileSettings["saturation"] })
+                    }
+                    className="w-full px-2 py-1.5 rounded border bg-background text-xs"
+                  >
+                    <option value="none">None</option>
+                    <option value="low">Low</option>
+                    <option value="high">High</option>
+                    <option value="grayscale">Grayscale</option>
+                  </select>
+                </div>
               </div>
             </section>
 
-            <section>
-              <h4 className="font-semibold mb-1.5">Motion</h4>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  data-testid="a11y-reduced-motion"
-                  checked={settings.reducedMotion}
-                  onChange={toggleReducedMotion}
-                />
-                Reduce motion (pause animations &amp; transitions)
-              </label>
+            {/* Text */}
+            <section className="border-t pt-2">
+              <h4 className="font-semibold mb-1.5">Text</h4>
+              <div className="space-y-1.5">
+                <div>
+                  <label className="block text-[10px] font-medium mb-1">Text Size</label>
+                  <div className="grid grid-cols-5 gap-1">
+                    {TEXT_SCALES.map((scale) => (
+                      <button
+                        key={scale}
+                        data-testid={`a11y-text-scale-${scale}`}
+                        onClick={() => updateSettings({ textScale: scale })}
+                        className={`px-1 py-1 rounded border text-xs transition-colors ${
+                          settings.textScale === scale
+                            ? "bg-primary text-primary-foreground border-transparent"
+                            : "hover:bg-accent/50"
+                        }`}
+                      >
+                        {scale}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium mb-1">Line Height</label>
+                  <select
+                    data-testid="a11y-line-height"
+                    value={settings.lineHeight}
+                    onChange={(e) =>
+                      updateSettings({ lineHeight: e.target.value as AccessibilityProfileSettings["lineHeight"] })
+                    }
+                    className="w-full px-2 py-1.5 rounded border bg-background text-xs"
+                  >
+                    <option value="none">Normal</option>
+                    <option value="loose">Loose (1.5)</option>
+                    <option value="loosest">Very Loose (2.0)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium mb-1">Letter Spacing</label>
+                  <select
+                    data-testid="a11y-letter-spacing"
+                    value={settings.letterSpacing}
+                    onChange={(e) =>
+                      updateSettings({ letterSpacing: e.target.value as AccessibilityProfileSettings["letterSpacing"] })
+                    }
+                    className="w-full px-2 py-1.5 rounded border bg-background text-xs"
+                  >
+                    <option value="none">Normal</option>
+                    <option value="wide">Wide</option>
+                    <option value="wider">Very Wide</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium mb-1">Text Align</label>
+                  <select
+                    data-testid="a11y-text-align"
+                    value={settings.textAlign}
+                    onChange={(e) =>
+                      updateSettings({ textAlign: e.target.value as AccessibilityProfileSettings["textAlign"] })
+                    }
+                    className="w-full px-2 py-1.5 rounded border bg-background text-xs"
+                  >
+                    <option value="none">Default</option>
+                    <option value="left">Left</option>
+                    <option value="center">Center</option>
+                  </select>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="a11y-dyslexia-font"
+                    checked={settings.dyslexiaFont}
+                    onChange={(e) => updateSettings({ dyslexiaFont: e.target.checked })}
+                  />
+                  <span>Dyslexia-friendly font</span>
+                </label>
+              </div>
             </section>
 
-            <section>
-              <h4 className="font-semibold mb-1.5">Orientation Adjustment</h4>
+            {/* Content */}
+            <section className="border-t pt-2">
+              <h4 className="font-semibold mb-1.5">Content</h4>
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="a11y-highlight-links"
+                    checked={settings.highlightLinks}
+                    onChange={(e) => updateSettings({ highlightLinks: e.target.checked })}
+                  />
+                  <span>Highlight links</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="a11y-hide-images"
+                    checked={settings.hideImages}
+                    onChange={(e) => updateSettings({ hideImages: e.target.checked })}
+                  />
+                  <span>Hide images</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="a11y-reduced-motion"
+                    checked={settings.reducedMotion}
+                    onChange={(e) => updateSettings({ reducedMotion: e.target.checked })}
+                  />
+                  <span>Pause animations</span>
+                </label>
+              </div>
+            </section>
+
+            {/* Aids */}
+            <section className="border-t pt-2">
+              <h4 className="font-semibold mb-1.5">Accessibility Aids</h4>
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="a11y-big-cursor"
+                    checked={settings.bigCursor}
+                    onChange={(e) => updateSettings({ bigCursor: e.target.checked })}
+                  />
+                  <span>Large cursor</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="a11y-reading-guide"
+                    checked={settings.readingGuide}
+                    onChange={(e) => updateSettings({ readingGuide: e.target.checked })}
+                  />
+                  <span>Reading line</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="a11y-reading-mask"
+                    checked={settings.readingMask}
+                    onChange={(e) => updateSettings({ readingMask: e.target.checked })}
+                  />
+                  <span>Reading mask</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="a11y-tooltips"
+                    checked={settings.tooltips}
+                    onChange={(e) => updateSettings({ tooltips: e.target.checked })}
+                  />
+                  <span>Show tooltips</span>
+                </label>
+              </div>
+            </section>
+
+            {/* Orientation */}
+            <section className="border-t pt-2">
+              <h4 className="font-semibold mb-1.5">Orientation</h4>
               <div className="flex gap-1.5">
                 {(["portrait", "landscape"] as const).map((o) => (
                   <button
                     key={o}
                     data-testid={`a11y-orientation-${o}`}
                     onClick={() => onOrientationChange(o)}
-                    className={`flex-1 px-2 py-1.5 rounded border capitalize transition-colors ${
+                    className={`flex-1 px-2 py-1.5 rounded border capitalize transition-colors text-xs ${
                       orientation === o
                         ? "bg-primary text-primary-foreground border-transparent"
                         : "hover:bg-accent/50"
@@ -236,10 +404,6 @@ export function AccessibilityOptionsPanel({
                   </button>
                 ))}
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">
-                Simulated by resizing the preview — an iframe can&apos;t truly rotate the
-                target device.
-              </p>
             </section>
           </div>
         </div>
