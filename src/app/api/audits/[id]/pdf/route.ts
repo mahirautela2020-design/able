@@ -1,4 +1,4 @@
-import { supabase, createSignedUrl, getAudit } from "@/lib/supabase/server";
+import { supabase, createSignedUrl, getAudit, downloadEvidence, uploadEvidence } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
 import { getClientIp } from "@/lib/http";
 import { buildReportHtml } from "@/lib/report";
@@ -54,6 +54,25 @@ export async function GET(
       );
     }
 
+    // Cache: a completed audit's findings never change (a "re-run" creates a
+    // brand-new audit id, it doesn't mutate this one), so its PDF is a pure
+    // function of the audit id — safe to render once via headless Chromium
+    // and reuse on every subsequent download instead of re-launching a
+    // browser for an identical result. Only complete audits are cached;
+    // an in-progress audit's findings can still change between requests.
+    const cachePath = `${id}/report-${id}.pdf`;
+    if (auditRow.status === "complete") {
+      const cached = await downloadEvidence(cachePath);
+      if (cached) {
+        return new Response(new Uint8Array(cached), {
+          headers: {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": `attachment; filename="able-report-${id.slice(0, 8)}.pdf"`,
+          },
+        });
+      }
+    }
+
     // Regenerate the report HTML from the DB (same builder the pipeline uses)
     const html = await buildReportHtml(id);
 
@@ -95,6 +114,14 @@ export async function GET(
         printBackground: true,
         margin: { top: "32px", bottom: "32px", left: "48px", right: "48px" },
       });
+
+      // Cache for next time — best-effort, a storage hiccup shouldn't fail
+      // a request that already has a good PDF in hand. Images are rasterized
+      // into the PDF at print time, so the cached bytes have no dependency
+      // on the signed URLs used to generate them (those can safely expire).
+      if (auditRow.status === "complete") {
+        uploadEvidence(Buffer.from(pdf), cachePath, "application/pdf").catch(() => {});
+      }
 
       // Convert Buffer → Uint8Array for the Response body (Node 18+ typing)
       const body = new Uint8Array(pdf);

@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import { withPage } from "@/engine/browser";
 import { waitForPageSettle } from "@/engine/settle";
-import { getAudit, getAuditPageId, insertFindings, uploadEvidence } from "@/lib/supabase/server";
+import { getAudit, getAuditPageId, insertFindings, uploadEvidence, invalidatePdfCache } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
 import { getClientIp } from "@/lib/http";
 import { sanitizeUrl, validateHost } from "@/lib/ssrf";
@@ -257,6 +257,12 @@ export async function POST(
   } catch {
     return Response.json({ error: "Failed to save finding" }, { status: 500 });
   }
+
+  // This finding may have just been added to an audit whose PDF was already
+  // cached — invalidate so the next download reflects it. Best-effort: a
+  // failed invalidation just means the next download serves a stale cache,
+  // not a broken response for this request.
+  invalidatePdfCache(auditId).catch(() => {});
 
   return Response.json(
     {
