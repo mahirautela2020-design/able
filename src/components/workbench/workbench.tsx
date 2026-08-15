@@ -91,7 +91,14 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [startedAt, setStartedAt] = useState(0);
   const [liveFindings, setLiveFindings] = useState<WorkbenchFinding[]>(findings);
   const [status, setStatus] = useState(auditStatus);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [progress, setProgress] = useState<Record<string, unknown> | null>(null);
+  const [stopping, setStopping] = useState(false);
+  // Faithful preview (item: "render like a browser"): a server-side headless
+  // Chromium screenshot of the target, for sites the proxy can't fully render.
+  const [faithful, setFaithful] = useState(false);
+  const [renderUrl, setRenderUrl] = useState<string | null>(null);
+  const [renderState, setRenderState] = useState<"idle" | "loading" | "blocked" | "error">("idle");
 
   // Full WCAG 2.2 registry (86 SCs) — the checklist the user sees.
   const registry = useMemo(() => getWcagRegistry(), []);
@@ -116,6 +123,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
         const json = await res.json();
         if (stopped) return;
         setStatus(json.audit?.status ?? status);
+        setErrorCode(json.audit?.error_code ?? null);
         setProgress(json.audit?.progress ?? null);
         if (Array.isArray(json.findings)) setLiveFindings(json.findings);
       } catch {
@@ -324,6 +332,63 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
     }
   }
 
+  // Stop a queued/running audit. The server marks it failed/CANCELLED and the
+  // scan pipeline bails between pages; we optimistically reflect that here so
+  // the UI updates immediately (polling would otherwise catch it next tick).
+  async function handleStop() {
+    if (stopping) return;
+    setStopping(true);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`/api/audits/${auditId}/cancel`, { method: "POST", headers });
+      if (res.ok) {
+        setStatus("failed");
+        setErrorCode("CANCELLED");
+      }
+    } catch (e) {
+      console.error("Stop failed:", e);
+    } finally {
+      setStopping(false);
+    }
+  }
+
+  // Faithful preview: fetch a real-browser screenshot of the target. A JSON
+  // { blocked } response means the site is behind bot-detection (tier-3) —
+  // no server-side proxy can render it, so we say so plainly and keep the
+  // audit results, which don't depend on the preview, front and center.
+  async function loadFaithfulRender() {
+    setFaithful(true);
+    setRenderState("loading");
+    try {
+      const res = await fetch(`/api/preview-render?url=${encodeURIComponent(targetUrl)}`);
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("application/json")) {
+        const j = await res.json().catch(() => ({}));
+        setRenderState(j.blocked ? "blocked" : "error");
+        return;
+      }
+      if (!res.ok) {
+        setRenderState("error");
+        return;
+      }
+      const blob = await res.blob();
+      setRenderUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(blob);
+      });
+      setRenderState("idle");
+    } catch {
+      setRenderState("error");
+    }
+  }
+
+  // Release the last object URL when the component unmounts.
+  useEffect(() => {
+    return () => {
+      if (renderUrl) URL.revokeObjectURL(renderUrl);
+    };
+  }, [renderUrl]);
+
   return (
     <div className="relative flex h-full border rounded-lg overflow-hidden bg-background">
       {/* ── LEFT: WCAG checklist ── */}
@@ -346,22 +411,33 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
                 <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
               ) : status === "complete" ? (
                 <span className="h-2 w-2 rounded-full bg-green-500" />
+              ) : status === "failed" && errorCode === "CANCELLED" ? (
+                <span className="h-2 w-2 rounded-full bg-amber-500" />
               ) : status === "failed" ? (
                 <span className="h-2 w-2 rounded-full bg-red-500" />
               ) : (
                 <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
               )}
-              <span className="text-xs font-semibold capitalize">
-                {statusLabel(status)}
+              <span className="text-xs font-semibold">
+                {auditStatusLabel(status, errorCode)}
               </span>
             </div>
+            {(status === "running" || status === "queued") && (
+              <button
+                onClick={handleStop}
+                disabled={stopping}
+                className="text-[11px] px-2 py-0.5 rounded border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors disabled:opacity-50"
+              >
+                {stopping ? "Stopping…" : "Stop"}
+              </button>
+            )}
             {status === "failed" && (
               <button
                 onClick={() => handleRerun()}
                 disabled={rerunning}
                 className="text-[11px] px-2 py-0.5 rounded border hover:bg-accent/50 transition-colors disabled:opacity-50"
               >
-                {rerunning ? "Starting…" : "Re-run"}
+                {rerunning ? "Starting…" : "Retry"}
               </button>
             )}
           </div>
@@ -400,9 +476,14 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
               Audit complete — {liveFindings.length} findings across {bySc.size} criteria.
             </p>
           )}
-          {status === "failed" && (
+          {status === "failed" && errorCode === "CANCELLED" && (
+            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+              Audit stopped. Any pages already scanned are shown below — or retry.
+            </p>
+          )}
+          {status === "failed" && errorCode !== "CANCELLED" && (
             <p className="text-[11px] text-red-600 dark:text-red-400">
-              Audit failed. Check the pages below or re-run.
+              Audit failed. Check the pages below or retry.
             </p>
           )}
         </div>
@@ -642,16 +723,37 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
             <div className="flex items-center gap-2 shrink-0">
               {firstScreenshot && (
                 <button
-                  onClick={() => setShowScreenshot((s) => !s)}
+                  onClick={() => {
+                    setFaithful(false);
+                    setShowScreenshot((s) => !s);
+                  }}
                   className={`px-2 py-1 rounded border transition-colors ${
-                    showScreenshot
+                    showScreenshot && !faithful
                       ? "bg-primary text-primary-foreground border-transparent"
                       : "border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40"
                   }`}
                 >
-                  {showScreenshot ? "Live preview" : "Audited screenshot"}
+                  {showScreenshot && !faithful ? "Live preview" : "Audited screenshot"}
                 </button>
               )}
+              <button
+                onClick={() => {
+                  if (faithful) {
+                    setFaithful(false);
+                  } else {
+                    setShowScreenshot(false);
+                    loadFaithfulRender();
+                  }
+                }}
+                className={`px-2 py-1 rounded border transition-colors ${
+                  faithful
+                    ? "bg-primary text-primary-foreground border-transparent"
+                    : "border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                }`}
+                title="Render the page with a real headless browser (like Claude does)"
+              >
+                {faithful ? "Back to proxy" : "Render like a browser"}
+              </button>
               <a
                 href={targetUrl}
                 target="_blank"
@@ -693,7 +795,47 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           />
           {frameBlocked && (
             <div className="absolute inset-0 flex flex-col bg-background">
-              {showScreenshot && firstScreenshot ? (
+              {faithful ? (
+                <div className="flex-1 overflow-auto">
+                  {renderState === "loading" && (
+                    <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
+                      Rendering a real-browser snapshot…
+                    </div>
+                  )}
+                  {renderState === "blocked" && (
+                    <div className="h-full flex flex-col items-center justify-center gap-2 p-6 text-center">
+                      <p className="text-sm font-medium">Live preview isn&apos;t available for this site</p>
+                      <p className="text-xs text-muted-foreground max-w-sm">
+                        <span className="font-medium">{targetUrl}</span> is behind bot-detection
+                        (e.g. Cloudflare / Akamai), which blocks every server-side preview —
+                        including a real headless browser. This does not affect the audit: results
+                        appear in the checklist on the left as pages finish.
+                      </p>
+                      <a
+                        href={targetUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs underline"
+                      >
+                        Open the live site in a new tab
+                      </a>
+                    </div>
+                  )}
+                  {renderState === "error" && (
+                    <div className="h-full flex items-center justify-center text-xs text-red-600 dark:text-red-400 px-6 text-center">
+                      Couldn&apos;t render a snapshot. Try the proxy preview or open the live site.
+                    </div>
+                  )}
+                  {renderState === "idle" && renderUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={renderUrl}
+                      alt={`Real-browser rendered snapshot of ${targetUrl}`}
+                      className="w-full"
+                    />
+                  )}
+                </div>
+              ) : showScreenshot && firstScreenshot ? (
                 <div className="flex-1 overflow-auto">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -703,15 +845,13 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
                   />
                 </div>
               ) : (
-                !showScreenshot && (
-                  <div className="flex-1 overflow-auto">
-                    <iframe
-                      src={`/api/preview-proxy?url=${encodeURIComponent(targetUrl)}`}
-                      title={`Proxied preview of ${targetUrl}`}
-                      className="w-full h-full border-0"
-                    />
-                  </div>
-                )
+                <div className="flex-1 overflow-auto">
+                  <iframe
+                    src={`/api/preview-proxy?url=${encodeURIComponent(targetUrl)}`}
+                    title={`Proxied preview of ${targetUrl}`}
+                    className="w-full h-full border-0"
+                  />
+                </div>
               )}
             </div>
           )}
@@ -850,6 +990,23 @@ export function formatEta(seconds: number): string {
   if (seconds < 60) return "<1 min left";
   const minutes = Math.round(seconds / 60);
   return `~${minutes} min left`;
+}
+
+/** Human label for the AUDIT lifecycle status (distinct from per-SC finding
+ * status). A failed audit carrying error_code "CANCELLED" reads as "Stopped". */
+export function auditStatusLabel(status: string, errorCode?: string | null): string {
+  switch (status) {
+    case "queued":
+      return "Queued";
+    case "running":
+      return "Running";
+    case "complete":
+      return "Completed";
+    case "failed":
+      return errorCode === "CANCELLED" ? "Stopped" : "Failed";
+    default:
+      return status.charAt(0).toUpperCase() + status.slice(1);
+  }
 }
 
 function statusLabel(status: string): string {

@@ -13,6 +13,7 @@ import { axTreeToTranscript } from "@/engine/sr-speech";
 import { scanResponsive } from "@/engine/responsive-scan";
 import { resolveModuleIds, resolveModuleGates, getModuleWcagCoverage } from "@/lib/audit-modules";
 import {
+  getAudit,
   updateAuditStatus,
   updateAuditProgress,
   insertAuditPage,
@@ -103,6 +104,15 @@ export const auditUrl = inngest.createFunction(
     const allFindings: unknown[] = [];
 
     for (const [i, pageUrl] of (pages as string[]).entries()) {
+      // Cooperative cancellation: /api/audits/[id]/cancel flips the row to
+      // status="failed"/error_code="CANCELLED". Check before each page so a
+      // Stop takes effect within one page instead of running the whole crawl.
+      const stillRunning = await step.run(`cancel-check-${i}`, async () => {
+        const a = await getAudit(auditId);
+        return a.status === "running";
+      });
+      if (!stillRunning) break;
+
       await step.run(`scan-page-${i}`, async () => {
         let pageId = "";
         const telemetry = { networkidleTimedOut: false };
@@ -394,6 +404,15 @@ export const auditUrl = inngest.createFunction(
 
         return scanOutcome;
       });
+    }
+
+    // Final cancel guard: if the audit was stopped during the last page,
+    // don't build a report or overwrite the cancelled status with "complete".
+    const finalStatus = await step.run("cancel-check-final", async () => {
+      return (await getAudit(auditId)).status;
+    });
+    if (finalStatus !== "running") {
+      return { auditId, status: finalStatus };
     }
 
     await step.run("build-report", async () => {
