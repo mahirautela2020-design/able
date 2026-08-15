@@ -251,6 +251,13 @@ export const ABLE_INSPECT_BRIDGE_SCRIPT = `
           css.push("*{cursor:url('" + cursorSvg + "') 0 0,auto!important}");
         }
 
+        // Text magnify: enlarges text under the cursor (UX4G's "Text
+        // Magnify") — a true cursor-following lens would need a canvas
+        // overlay; this hover-scale is the CSS-only equivalent.
+        if (settings.textMagnify) {
+          css.push("p:hover,span:hover,li:hover,a:hover,h1:hover,h2:hover,h3:hover,h4:hover,h5:hover,h6:hover,button:hover,label:hover{font-size:1.5em!important;transition:font-size .1s ease}");
+        }
+
         // Update or create style element
         if (css.length > 0 || filterParts.length > 0) {
           var styleText = css.join("");
@@ -308,6 +315,52 @@ export const ABLE_INSPECT_BRIDGE_SCRIPT = `
           mask.remove();
         }
 
+        // Manage focus mode: UX4G's "Focus Mode" — "Light Up selected
+        // section on page while hovering". A hover-triggered spotlight: the
+        // hovered content section is highlighted while the rest of the page
+        // is dimmed, via the same box-shadow-as-mask trick used by the
+        // reading mask above (a single element whose oversized box-shadow
+        // covers everything outside its own rect).
+        if (settings.focusMode) {
+          if (!window.__ableFocusModeHandler) {
+            var fmSpot = document.createElement("div");
+            fmSpot.id = "__able-focus-spot";
+            fmSpot.style.cssText = "position:fixed;pointer-events:none;z-index:99996;border:3px solid #2563eb;border-radius:4px;box-shadow:0 0 0 9999px rgba(0,0,0,0.6);display:none;transition:left .08s ease,top .08s ease,width .08s ease,height .08s ease";
+            document.body.appendChild(fmSpot);
+            var FOCUS_MODE_SELECTOR = "section,article,header,nav,main,aside,form,figure,table,li,p,h1,h2,h3,h4,h5,h6,button,a,label,blockquote,pre,img";
+            var fmOverHandler = function(ev) {
+              var target = ev.target;
+              var el = target && target.closest ? target.closest(FOCUS_MODE_SELECTOR) : null;
+              if (!el || el === document.body || el === document.documentElement) {
+                fmSpot.style.display = "none";
+                return;
+              }
+              var rect = el.getBoundingClientRect();
+              if (rect.width === 0 || rect.height === 0) {
+                fmSpot.style.display = "none";
+                return;
+              }
+              fmSpot.style.left = rect.left + "px";
+              fmSpot.style.top = rect.top + "px";
+              fmSpot.style.width = rect.width + "px";
+              fmSpot.style.height = rect.height + "px";
+              fmSpot.style.display = "block";
+            };
+            var fmOutHandler = function(ev) {
+              if (!ev.relatedTarget) fmSpot.style.display = "none";
+            };
+            document.addEventListener("mouseover", fmOverHandler);
+            document.addEventListener("mouseout", fmOutHandler);
+            window.__ableFocusModeHandler = { over: fmOverHandler, out: fmOutHandler };
+          }
+        } else if (window.__ableFocusModeHandler) {
+          document.removeEventListener("mouseover", window.__ableFocusModeHandler.over);
+          document.removeEventListener("mouseout", window.__ableFocusModeHandler.out);
+          window.__ableFocusModeHandler = null;
+          var fmSpotEl = document.getElementById("__able-focus-spot");
+          if (fmSpotEl) fmSpotEl.remove();
+        }
+
         // Manage tooltips
         if (settings.tooltips) {
           var tooltipId = "__able-tooltip";
@@ -348,6 +401,99 @@ export const ABLE_INSPECT_BRIDGE_SCRIPT = `
             }
             tooltip.remove();
           }
+        }
+
+        // Manage dictionary lookup: double-click a word for its definition,
+        // via the free, keyless Dictionary API (dictionaryapi.dev — MIT-
+        // licensed, Wiktionary-sourced). Entirely self-contained in the
+        // iframe: no postMessage round-trip to the parent needed.
+        if (settings.dictionary) {
+          if (!window.__ableDictHandler) {
+            var dictPopup = null;
+            function removeDictPopup() {
+              if (dictPopup) { dictPopup.remove(); dictPopup = null; }
+            }
+            function wordAt(x, y) {
+              var range;
+              if (document.caretRangeFromPoint) {
+                range = document.caretRangeFromPoint(x, y);
+              } else if (document.caretPositionFromPoint) {
+                var pos = document.caretPositionFromPoint(x, y);
+                if (pos) {
+                  range = document.createRange();
+                  range.setStart(pos.offsetNode, pos.offset);
+                  range.collapse(true);
+                }
+              }
+              if (!range || !range.startContainer || range.startContainer.nodeType !== 3) return null;
+              var text = range.startContainer.textContent || "";
+              var offset = range.startOffset;
+              var start = offset, end = offset;
+              while (start > 0 && /[a-zA-Z']/.test(text[start - 1])) start--;
+              while (end < text.length && /[a-zA-Z']/.test(text[end])) end++;
+              var word = text.slice(start, end).replace(/^'+|'+$/g, "");
+              return word.length > 1 ? word.toLowerCase() : null;
+            }
+            var dictHandler = function(ev) {
+              var word = wordAt(ev.clientX, ev.clientY);
+              removeDictPopup();
+              if (!word) return;
+              ev.preventDefault();
+              dictPopup = document.createElement("div");
+              dictPopup.className = "__able-dict-popup";
+              dictPopup.style.cssText = "position:fixed;max-width:280px;background:#111;color:#fff;padding:8px 10px;border-radius:6px;font-size:12px;line-height:1.4;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,0.3);left:" + (ev.clientX + 8) + "px;top:" + (ev.clientY + 12) + "px";
+              dictPopup.textContent = "Looking up \\"" + word + "\\"\\u2026";
+              document.body.appendChild(dictPopup);
+              fetch("https://api.dictionaryapi.dev/api/v2/entries/en/" + encodeURIComponent(word))
+                .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+                .then(function(data) {
+                  if (!dictPopup) return;
+                  var entry = data[0];
+                  var meaning = entry && entry.meanings && entry.meanings[0];
+                  var def = meaning && meaning.definitions && meaning.definitions[0];
+                  var phonetic = entry && (entry.phonetic || (entry.phonetics && entry.phonetics[0] && entry.phonetics[0].text)) || "";
+                  var pos = meaning ? meaning.partOfSpeech : "";
+                  var audioUrl = "";
+                  if (entry && entry.phonetics) {
+                    for (var pi = 0; pi < entry.phonetics.length; pi++) {
+                      if (entry.phonetics[pi] && entry.phonetics[pi].audio) {
+                        audioUrl = entry.phonetics[pi].audio;
+                        break;
+                      }
+                    }
+                  }
+                  var html = "<strong>" + word + "</strong>";
+                  if (phonetic) html += " <span style=\\"opacity:.7\\">" + phonetic + "</span>";
+                  if (pos) html += " <em style=\\"opacity:.7\\">(" + pos + ")</em>";
+                  if (audioUrl) {
+                    html += ' <button type="button" class="__able-dict-audio" aria-label="Play pronunciation" style="cursor:pointer;border:none;background:none;padding:0 2px;color:inherit;font-size:12px">&#x1F50A;</button>';
+                  }
+                  html += "<br/>" + (def ? def.definition : "No definition found.");
+                  dictPopup.innerHTML = html;
+                  if (audioUrl) {
+                    var audioBtn = dictPopup.querySelector(".__able-dict-audio");
+                    if (audioBtn) {
+                      audioBtn.addEventListener("click", function(e) {
+                        e.stopPropagation();
+                        try { new Audio(audioUrl).play(); } catch (err) {}
+                      });
+                    }
+                  }
+                })
+                .catch(function() {
+                  if (dictPopup) dictPopup.textContent = "No definition found for \\"" + word + "\\".";
+                });
+            };
+            document.addEventListener("dblclick", dictHandler);
+            document.addEventListener("click", removeDictPopup);
+            window.__ableDictHandler = { dblclick: dictHandler, click: removeDictPopup };
+          }
+        } else if (window.__ableDictHandler) {
+          document.removeEventListener("dblclick", window.__ableDictHandler.dblclick);
+          document.removeEventListener("click", window.__ableDictHandler.click);
+          var openPopup = document.querySelector(".__able-dict-popup");
+          if (openPopup) openPopup.remove();
+          window.__ableDictHandler = null;
         }
 
         return true;

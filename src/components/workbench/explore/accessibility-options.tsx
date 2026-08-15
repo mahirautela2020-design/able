@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { VoiceSupport } from "./voice-support";
+import { ScreenReaderToggle } from "./screen-reader-toggle";
 
 export interface AccessibilityProfileSettings {
   profile: string;
@@ -18,6 +20,9 @@ export interface AccessibilityProfileSettings {
   readingGuide: boolean;
   readingMask: boolean;
   tooltips: boolean;
+  focusMode: boolean;
+  textMagnify: boolean;
+  dictionary: boolean;
 }
 
 export type Orientation = "portrait" | "landscape";
@@ -29,6 +34,13 @@ interface AccessibilityOptionsPanelProps {
   /** "fab" (default) = UX4G-style floating button + panel overlay.
    *  "inline" = render the controls directly (for the left-column tab). */
   variant?: "fab" | "inline";
+  /** Scrolls the live preview — wired by the parent to the iframe's own
+   * contentWindow, for the "scroll up"/"scroll down" voice commands. */
+  onScroll?: (direction: "up" | "down") => void;
+  /** Returns the live preview's current visible text — wired by the parent
+   * to the iframe's own contentWindow/document, for the in-widget "Screen
+   * Reader" (read page aloud) toggle. */
+  onGetPageText?: () => string;
 }
 
 export const DEFAULT_A11Y_SETTINGS: AccessibilityProfileSettings = {
@@ -47,6 +59,9 @@ export const DEFAULT_A11Y_SETTINGS: AccessibilityProfileSettings = {
   readingGuide: false,
   readingMask: false,
   tooltips: false,
+  focusMode: false,
+  textMagnify: false,
+  dictionary: false,
 };
 
 interface PresetProfile {
@@ -55,17 +70,34 @@ interface PresetProfile {
   settings: Partial<AccessibilityProfileSettings>;
 }
 
+// Matches the 8 profiles in UX4G's own "Accessibility Profile" dropdown
+// (ux4g.gov.in, Ctrl+F2 widget) verbatim, plus a "None" reset.
 const PRESETS: PresetProfile[] = [
   { id: "none", label: "None", settings: DEFAULT_A11Y_SETTINGS },
+  {
+    id: "seizure-safe",
+    label: "Seizure Safe",
+    settings: { reducedMotion: true, saturation: "low" },
+  },
+  {
+    id: "color-blindness",
+    label: "Color Blindness",
+    settings: { saturation: "grayscale", contrast: "high" },
+  },
   {
     id: "low-vision",
     label: "Low Vision",
     settings: { textScale: 150, contrast: "high", bigCursor: true },
   },
   {
-    id: "high-contrast",
-    label: "High Contrast",
-    settings: { contrast: "high" },
+    id: "vision-impaired",
+    label: "Visually Impaired",
+    settings: { textScale: 200, contrast: "high", highlightLinks: true, bigCursor: true },
+  },
+  {
+    id: "senior-citizens",
+    label: "Senior Citizens",
+    settings: { textScale: 125, lineHeight: "loose", bigCursor: true },
   },
   {
     id: "dyslexia",
@@ -73,24 +105,14 @@ const PRESETS: PresetProfile[] = [
     settings: { dyslexiaFont: true, letterSpacing: "wide", lineHeight: "loose", textAlign: "left" },
   },
   {
+    id: "motor-impairment",
+    label: "Motor Impairment",
+    settings: { bigCursor: true, focusMode: true, reducedMotion: true },
+  },
+  {
     id: "adhd",
-    label: "ADHD",
-    settings: { readingMask: true, reducedMotion: true },
-  },
-  {
-    id: "seizure-safe",
-    label: "Seizure Safe",
-    settings: { reducedMotion: true, saturation: "low" },
-  },
-  {
-    id: "vision-impaired",
-    label: "Vision Impaired",
-    settings: { textScale: 175, contrast: "high", highlightLinks: true },
-  },
-  {
-    id: "blind",
-    label: "Screen Reader",
-    settings: { highlightLinks: true },
+    label: "Cognitive / ADHD",
+    settings: { readingMask: true, reducedMotion: true, focusMode: true },
   },
 ];
 
@@ -109,6 +131,8 @@ export function AccessibilityOptionsPanel({
   orientation,
   onOrientationChange,
   variant = "fab",
+  onScroll,
+  onGetPageText,
 }: AccessibilityOptionsPanelProps) {
   const [open, setOpen] = useState(false);
   const [settings, setSettings] = useState<AccessibilityProfileSettings>(DEFAULT_A11Y_SETTINGS);
@@ -243,7 +267,7 @@ export function AccessibilityOptionsPanel({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium mb-1">Letter Spacing</label>
+                  <label className="block text-[10px] font-medium mb-1">Text Spacing</label>
                   <select
                     data-testid="a11y-letter-spacing"
                     value={settings.letterSpacing}
@@ -329,16 +353,16 @@ export function AccessibilityOptionsPanel({
                     checked={settings.bigCursor}
                     onChange={(e) => updateSettings({ bigCursor: e.target.checked })}
                   />
-                  <span>Large cursor</span>
+                  <span>Cursor Size</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    data-testid="a11y-reading-guide"
+                    data-testid="a11y-reading-guides"
                     checked={settings.readingGuide}
                     onChange={(e) => updateSettings({ readingGuide: e.target.checked })}
                   />
-                  <span>Reading line</span>
+                  <span>Reading Guides</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -358,8 +382,46 @@ export function AccessibilityOptionsPanel({
                   />
                   <span>Show tooltips</span>
                 </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="a11y-focus-mode"
+                    checked={settings.focusMode}
+                    onChange={(e) => updateSettings({ focusMode: e.target.checked })}
+                  />
+                  <span>Focus mode (light up section on hover)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="a11y-text-magnify"
+                    checked={settings.textMagnify}
+                    onChange={(e) => updateSettings({ textMagnify: e.target.checked })}
+                  />
+                  <span>Text magnify (enlarge text on hover)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="a11y-dictionary"
+                    checked={settings.dictionary}
+                    onChange={(e) => updateSettings({ dictionary: e.target.checked })}
+                  />
+                  <span>Dictionary (double-click a word for its definition)</span>
+                </label>
               </div>
             </section>
+
+            {/* Orientation Adjustment: UX4G groups Screen Reader (read the
+                current page aloud) right alongside Voice Support. */}
+            <ScreenReaderToggle onGetPageText={onGetPageText} />
+
+            <VoiceSupport
+              settings={settings}
+              onCommand={updateSettings}
+              onScroll={onScroll}
+              onReset={() => applyPreset(PRESETS[0])}
+            />
 
             {/* Orientation */}
             <section className="border-t pt-2">

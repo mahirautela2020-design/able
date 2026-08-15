@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getWcagRegistry, type WcagSuccessCriterion } from "@/engine/wcag-registry";
@@ -416,6 +415,15 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
                 {rerunning ? "Starting…" : "Retry"}
               </button>
             )}
+            {status === "complete" && (
+              <button
+                onClick={() => requestRerun()}
+                disabled={rerunning}
+                className="text-[11px] px-2 py-0.5 rounded border hover:bg-accent/50 transition-colors disabled:opacity-50"
+              >
+                {rerunning ? "Starting…" : "Re-run"}
+              </button>
+            )}
           </div>
 
           {/* Progress bar */}
@@ -576,14 +584,26 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           })}
         </div>
 
-        {/* Focused check affordance */}
-        <div className="p-3 border-t">
-          <button
-            onClick={() => setActiveSc(null)}
-            className="w-full text-xs py-1.5 rounded-md border hover:bg-accent/50 transition-colors"
-          >
-            Clear selection
-          </button>
+        {/* Focused check affordance + download, in the left column so the
+            top preview row stays limited to preview navigation controls. */}
+        <div className="p-3 border-t space-y-2">
+          {activeSc && (
+            <button
+              onClick={() => setActiveSc(null)}
+              className="w-full text-xs py-1.5 rounded-md border hover:bg-accent/50 transition-colors"
+            >
+              Clear selection
+            </button>
+          )}
+          {status === "complete" && (
+            <button
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
+              className="w-full text-xs py-1.5 rounded-md border hover:bg-accent/50 transition-colors disabled:opacity-50"
+            >
+              {downloadingPdf ? "Preparing…" : "Download PDF"}
+            </button>
+          )}
         </div>
         </>
         )}
@@ -595,7 +615,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
         )}
         {activeTab === "screen-reader" && (
           <div className="flex-1 min-h-0">
-            <ScreenReaderPanel auditId={auditId} />
+            <ScreenReaderPanel auditId={auditId} targetUrl={targetUrl} />
           </div>
         )}
         {activeTab === "a11y" && (
@@ -605,6 +625,20 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
               onApply={ctrl.handleApplyA11yProfile}
               orientation={orientation}
               onOrientationChange={setOrientation}
+              onScroll={(direction) =>
+                iframeRef.current?.contentWindow?.scrollBy({
+                  top: direction === "down" ? 400 : -400,
+                  behavior: "smooth",
+                })
+              }
+              onGetPageText={() => {
+                try {
+                  return iframeRef.current?.contentWindow?.document.body?.innerText ?? "";
+                } catch {
+                  // Cross-origin iframe (proxy not same-origin) — nothing we can read.
+                  return "";
+                }
+              }}
             />
           </div>
         )}
@@ -612,104 +646,6 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
 
       {/* ── RIGHT: live preview + findings ── */}
       <main className="flex-1 flex flex-col min-w-0">
-        {/* URL row — actions live here ONLY (progress lives in the left column) */}
-        <div className="px-3 py-2 border-b bg-muted/20 flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            {/* Back to start */}
-            <Link
-              href="/"
-              className="shrink-0 text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
-              title="Back to new audit"
-            >
-              ← Back
-            </Link>
-
-            {/* URL: display or editable */}
-            {editingUrl ? (
-              <form
-                className="flex items-center gap-1.5 flex-1 min-w-0"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  setEditingUrl(false);
-                  if (urlDraft.trim() !== targetUrl) requestRerun();
-                }}
-              >
-                <input
-                  value={urlDraft}
-                  onChange={(e) => setUrlDraft(e.target.value)}
-                  autoFocus
-                  className="flex-1 min-w-0 text-xs font-mono px-2 py-1 rounded border bg-background focus:outline-none focus:ring-1"
-                  placeholder="https://example.com"
-                  aria-label="Edit audit URL"
-                />
-                <button
-                  type="submit"
-                  className="text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground hover:opacity-90"
-                >
-                  {rerunning ? "Starting…" : "Audit"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingUrl(false);
-                    setUrlDraft(targetUrl);
-                  }}
-                  className="text-xs px-2 py-1 rounded border hover:bg-accent/50"
-                >
-                  Cancel
-                </button>
-              </form>
-            ) : (
-              <button
-                onClick={() => setEditingUrl(true)}
-                className="group flex items-center gap-1.5 min-w-0 max-w-full"
-                title="Click to change URL / re-audit"
-              >
-                <span className="text-xs font-mono text-muted-foreground truncate">
-                  {targetUrl}
-                </span>
-                <span className="text-[10px] text-muted-foreground/60 group-hover:text-primary shrink-0">
-                  ✎
-                </span>
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <a
-              href={targetUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
-            >
-              Open live site
-            </a>
-            <button
-              onClick={() => setPreviewKey((k) => k + 1)}
-              className="text-xs px-2 py-1 rounded border hover:bg-accent/50 transition-colors"
-            >
-              Reload preview
-            </button>
-            {/* Re-run always available (esp. after a failure) */}
-            <button
-              onClick={() => requestRerun()}
-              disabled={rerunning || status === "running" || status === "queued"}
-              className="text-xs px-2.5 py-1 rounded-md border hover:bg-accent/50 transition-colors disabled:opacity-50"
-            >
-              {rerunning ? "Starting…" : "Re-run"}
-            </button>
-            {status === "complete" && (
-              <button
-                onClick={handleDownloadPdf}
-                disabled={downloadingPdf}
-                className="text-xs px-2.5 py-1 rounded-md border hover:bg-accent/50 transition-colors disabled:opacity-50"
-              >
-                {downloadingPdf ? "Preparing…" : "Download PDF"}
-              </button>
-            )}
-          </div>
-        </div>
-
         <PreviewPane
           targetUrl={targetUrl}
           previewKey={previewKey}
@@ -719,6 +655,16 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           orientation={orientation}
           firstScreenshot={firstScreenshot}
           frameBlocked={frameBlocked}
+          editingUrl={editingUrl}
+          setEditingUrl={setEditingUrl}
+          urlDraft={urlDraft}
+          setUrlDraft={setUrlDraft}
+          rerunning={rerunning}
+          onSubmitUrl={() => {
+            setEditingUrl(false);
+            if (urlDraft.trim() !== targetUrl) requestRerun();
+          }}
+          onReload={() => setPreviewKey((k) => k + 1)}
         />
 
         {/* Findings drawer for selected SC */}
