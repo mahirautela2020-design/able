@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Footer } from "@/components/footer";
 
 export const metadata: Metadata = {
   title: "About — ScanA11y",
@@ -7,6 +8,7 @@ export const metadata: Metadata = {
 
 export default function AboutPage() {
   return (
+    <>
     <div className="flex-1 w-full max-w-3xl mx-auto px-4 py-12">
       <h1 className="text-3xl font-bold tracking-tight">About ScanA11y</h1>
       <p className="text-muted-foreground mt-2">
@@ -90,5 +92,7 @@ export default function AboutPage() {
         </section>
       </div>
     </div>
+    <Footer />
+    </>
   );
 }
