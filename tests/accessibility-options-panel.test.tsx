@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { AccessibilityOptionsPanel } from "@/components/workbench/explore/accessibility-options";
+import {
+  AccessibilityOptionsPanel,
+  DEFAULT_A11Y_SETTINGS,
+} from "@/components/workbench/explore/accessibility-options";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -22,7 +25,7 @@ function setup() {
 describe("AccessibilityOptionsPanel", () => {
   it("applies the default profile settings on mount", () => {
     const { onApply } = setup();
-    expect(onApply).toHaveBeenCalledWith({ filter: "none", textScale: 100, reducedMotion: false });
+    expect(onApply).toHaveBeenCalledWith(DEFAULT_A11Y_SETTINGS);
   });
 
   it("the panel is closed until the FAB is clicked", () => {
@@ -48,46 +51,51 @@ describe("AccessibilityOptionsPanel", () => {
     fireEvent.click(screen.getByTestId("a11y-options-fab"));
     onApply.mockClear();
 
-    fireEvent.click(screen.getByTestId("a11y-profile-low-vision"));
+    fireEvent.click(screen.getByTestId("a11y-preset-low-vision"));
 
     expect(onApply).toHaveBeenCalledWith({
-      filter: "contrast(1.3)",
+      ...DEFAULT_A11Y_SETTINGS,
       textScale: 150,
-      reducedMotion: false,
+      contrast: "high",
+      bigCursor: true,
     });
   });
 
-  it("changing the color filter dropdown applies only the filter, keeping other settings", () => {
+  it("changing the contrast dropdown applies only that field, keeping other settings", () => {
     const { onApply } = setup();
     fireEvent.click(screen.getByTestId("a11y-options-fab"));
     fireEvent.click(screen.getByTestId("a11y-text-scale-125"));
     onApply.mockClear();
 
-    fireEvent.change(screen.getByTestId("a11y-filter-select"), {
-      target: { value: "grayscale(1)" },
+    fireEvent.change(screen.getByTestId("a11y-contrast"), {
+      target: { value: "high" },
     });
 
-    expect(onApply).toHaveBeenCalledWith({ filter: "grayscale(1)", textScale: 125, reducedMotion: false });
+    expect(onApply).toHaveBeenCalledWith({
+      ...DEFAULT_A11Y_SETTINGS,
+      textScale: 125,
+      contrast: "high",
+    });
   });
 
-  it("toggling 'Reduce motion' flips only that flag", () => {
+  it("toggling 'Pause animations' flips only the reducedMotion flag", () => {
     const { onApply } = setup();
     fireEvent.click(screen.getByTestId("a11y-options-fab"));
     onApply.mockClear();
 
     fireEvent.click(screen.getByTestId("a11y-reduced-motion"));
 
-    expect(onApply).toHaveBeenCalledWith({ filter: "none", textScale: 100, reducedMotion: true });
+    expect(onApply).toHaveBeenCalledWith({ ...DEFAULT_A11Y_SETTINGS, reducedMotion: true });
   });
 
-  it("clicking a text-size button reports the new scale, keeping filter/motion unchanged", () => {
+  it("clicking a text-size button reports the new scale, keeping other settings unchanged", () => {
     const { onApply } = setup();
     fireEvent.click(screen.getByTestId("a11y-options-fab"));
     onApply.mockClear();
 
     fireEvent.click(screen.getByTestId("a11y-text-scale-150"));
 
-    expect(onApply).toHaveBeenCalledWith({ filter: "none", textScale: 150, reducedMotion: false });
+    expect(onApply).toHaveBeenCalledWith({ ...DEFAULT_A11Y_SETTINGS, textScale: 150 });
   });
 
   it("clicking an orientation button calls onOrientationChange, not onApply (orientation is handled by the parent's iframe container, not the bridge)", () => {

@@ -162,20 +162,194 @@ export const ABLE_INSPECT_BRIDGE_SCRIPT = `
       }
       function applyAccessibilityProfile(settings) {
         settings = settings || {};
-        document.body.style.filter = (!settings.filter || settings.filter === "none") ? "" : settings.filter;
-        document.documentElement.style.fontSize = settings.textScale ? (settings.textScale + "%") : "";
         var styleId = "__able-a11y-style";
         var existing = document.getElementById(styleId);
+        var css = [];
+        var filterParts = [];
+
+        // Build composite filter
+        if (settings.contrast && settings.contrast !== "none") {
+          if (settings.contrast === "dark") {
+            filterParts.push("invert(1) hue-rotate(180deg)");
+            // Will re-invert images below
+          } else if (settings.contrast === "light") {
+            filterParts.push("brightness(1.1) contrast(1.1)");
+          } else if (settings.contrast === "high") {
+            filterParts.push("contrast(1.4)");
+          } else if (settings.contrast === "invert") {
+            filterParts.push("invert(1) hue-rotate(180deg)");
+          }
+        }
+        if (settings.saturation && settings.saturation !== "none") {
+          if (settings.saturation === "low") {
+            filterParts.push("saturate(0.5)");
+          } else if (settings.saturation === "high") {
+            filterParts.push("saturate(2)");
+          } else if (settings.saturation === "grayscale") {
+            filterParts.push("grayscale(1)");
+          }
+        }
+
+        // Apply composite filter to body
+        if (filterParts.length > 0) {
+          document.body.style.filter = filterParts.join(" ");
+          // Re-invert images if using dark contrast to compensate
+          if (settings.contrast === "dark") {
+            css.push("img,video,picture{filter:invert(1) hue-rotate(180deg)!important}");
+          }
+        } else {
+          document.body.style.filter = "";
+        }
+
+        // Text scale
+        if (settings.textScale && settings.textScale !== 100) {
+          document.documentElement.style.fontSize = settings.textScale + "%";
+        } else {
+          document.documentElement.style.fontSize = "";
+        }
+
+        // Line height
+        if (settings.lineHeight && settings.lineHeight !== "none") {
+          var lh = settings.lineHeight === "loose" ? "1.5" : (settings.lineHeight === "loosest" ? "2.0" : "1");
+          if (lh !== "1") css.push("*{line-height:" + lh + "!important}");
+        }
+
+        // Letter spacing
+        if (settings.letterSpacing && settings.letterSpacing !== "none") {
+          var ls = settings.letterSpacing === "wide" ? "0.05em" : (settings.letterSpacing === "wider" ? "0.1em" : "0");
+          if (ls !== "0") css.push("*{letter-spacing:" + ls + "!important}");
+        }
+
+        // Dyslexia font
+        if (settings.dyslexiaFont) {
+          css.push('*{font-family:"Comic Sans MS","OpenDyslexic",Verdana,sans-serif!important}');
+        }
+
+        // Text align
+        if (settings.textAlign && settings.textAlign !== "none") {
+          css.push("p,li,div,span,h1,h2,h3,h4,h5,h6{text-align:" + settings.textAlign + "!important}");
+        }
+
+        // Highlight links
+        if (settings.highlightLinks) {
+          css.push("a{outline:2px solid #ffbf00!important;background:#fff8e1!important;color:#00457c!important}");
+        }
+
+        // Hide images
+        if (settings.hideImages) {
+          css.push("img,svg,video,picture{visibility:hidden!important}");
+        }
+
+        // Reduced motion
         if (settings.reducedMotion) {
+          css.push("*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}");
+        }
+
+        // Big cursor
+        if (settings.bigCursor) {
+          var cursorSvg = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M0,0l8,12h6l10,12H0V0z'/%3E%3C/svg%3E";
+          css.push("*{cursor:url('" + cursorSvg + "') 0 0,auto!important}");
+        }
+
+        // Update or create style element
+        if (css.length > 0 || filterParts.length > 0) {
+          var styleText = css.join("");
           if (!existing) {
             var style = document.createElement("style");
             style.id = styleId;
-            style.textContent = "*,*::before,*::after{animation-play-state:paused!important;transition:none!important}";
             document.head.appendChild(style);
+            existing = style;
           }
+          existing.textContent = styleText;
         } else if (existing) {
           existing.remove();
         }
+
+        // Manage reading guide
+        var guideId = "__able-guide";
+        var guide = document.getElementById(guideId);
+        if (settings.readingGuide) {
+          if (!guide) {
+            guide = document.createElement("div");
+            guide.id = guideId;
+            guide.style.cssText = "position:fixed;left:0;right:0;height:4px;background:rgba(255,0,0,0.5);pointer-events:none;z-index:99998;display:none";
+            document.body.appendChild(guide);
+            var guideHandler = function(ev) {
+              guide.style.top = ev.clientY + "px";
+              guide.style.display = "block";
+            };
+            document.addEventListener("mousemove", guideHandler);
+            guide._guideHandler = guideHandler;
+          }
+        } else if (guide) {
+          if (guide._guideHandler) document.removeEventListener("mousemove", guide._guideHandler);
+          guide.remove();
+        }
+
+        // Manage reading mask
+        var maskId = "__able-mask";
+        var mask = document.getElementById(maskId);
+        if (settings.readingMask) {
+          if (!mask) {
+            mask = document.createElement("div");
+            mask.id = maskId;
+            mask.style.cssText = "position:fixed;left:0;right:0;top:0;bottom:0;pointer-events:none;z-index:99997;background:rgba(0,0,0,0.75);box-shadow:0 -120px 0 120px rgba(0,0,0,0.75) inset;display:none";
+            document.body.appendChild(mask);
+            var maskHandler = function(ev) {
+              mask.style.top = Math.max(0, ev.clientY - 60) + "px";
+              mask.style.bottom = Math.max(0, window.innerHeight - ev.clientY - 60) + "px";
+              mask.style.display = "block";
+            };
+            document.addEventListener("mousemove", maskHandler);
+            mask._maskHandler = maskHandler;
+          }
+        } else if (mask) {
+          if (mask._maskHandler) document.removeEventListener("mousemove", mask._maskHandler);
+          mask.remove();
+        }
+
+        // Manage tooltips
+        if (settings.tooltips) {
+          var tooltipId = "__able-tooltip";
+          var tooltip = document.getElementById(tooltipId);
+          if (!tooltip) {
+            tooltip = document.createElement("div");
+            tooltip.id = tooltipId;
+            tooltip.style.cssText = "position:fixed;background:#000;color:#fff;padding:4px 8px;border-radius:2px;font-size:12px;z-index:99999;pointer-events:none;display:none;max-width:200px;word-wrap:break-word";
+            document.body.appendChild(tooltip);
+            var tooltipHandler = function(ev) {
+              var el = ev.target;
+              var text = el.getAttribute("title") || el.getAttribute("aria-label");
+              if (text) {
+                tooltip.textContent = text;
+                tooltip.style.display = "block";
+                tooltip.style.left = (ev.clientX + 10) + "px";
+                tooltip.style.top = (ev.clientY + 10) + "px";
+              }
+            };
+            var tooltipHideHandler = function() {
+              tooltip.style.display = "none";
+            };
+            document.addEventListener("mouseover", tooltipHandler);
+            document.addEventListener("mouseout", tooltipHideHandler);
+            document.addEventListener("focus", tooltipHandler, true);
+            document.addEventListener("blur", tooltipHideHandler, true);
+            tooltip._tooltipHandler = tooltipHandler;
+            tooltip._tooltipHideHandler = tooltipHideHandler;
+          }
+        } else {
+          var tooltip = document.getElementById("__able-tooltip");
+          if (tooltip) {
+            if (tooltip._tooltipHandler) {
+              document.removeEventListener("mouseover", tooltip._tooltipHandler);
+              document.removeEventListener("mouseout", tooltip._tooltipHideHandler);
+              document.removeEventListener("focus", tooltip._tooltipHandler, true);
+              document.removeEventListener("blur", tooltip._tooltipHideHandler, true);
+            }
+            tooltip.remove();
+          }
+        }
+
         return true;
       }
 

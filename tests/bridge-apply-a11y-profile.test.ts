@@ -4,6 +4,8 @@ import { ABLE_INSPECT_BRIDGE_SCRIPT } from "@/lib/explore/bridge-script";
 interface AbleInspectBridge {
   applyAccessibilityProfile: (settings: {
     filter?: string;
+    contrast?: string;
+    saturation?: string;
     textScale?: number;
     reducedMotion?: boolean;
   }) => boolean;
@@ -20,14 +22,14 @@ beforeEach(() => {
 });
 
 describe("bridge applyAccessibilityProfile (real jsdom execution, not just string presence)", () => {
-  it("sets document.body.style.filter from settings.filter", () => {
-    window.__ableInspect!.applyAccessibilityProfile({ filter: "grayscale(1)" });
+  it("composes document.body.style.filter from the color settings (saturation → grayscale)", () => {
+    window.__ableInspect!.applyAccessibilityProfile({ saturation: "grayscale" });
     expect(document.body.style.filter).toBe("grayscale(1)");
   });
 
-  it("clears the filter when given 'none' or omitted", () => {
+  it("clears the filter when no color settings are given", () => {
     document.body.style.filter = "invert(1)";
-    window.__ableInspect!.applyAccessibilityProfile({ filter: "none" });
+    window.__ableInspect!.applyAccessibilityProfile({});
     expect(document.body.style.filter).toBe("");
   });
 
@@ -46,7 +48,7 @@ describe("bridge applyAccessibilityProfile (real jsdom execution, not just strin
     window.__ableInspect!.applyAccessibilityProfile({ reducedMotion: true });
     const styles = document.querySelectorAll("#__able-a11y-style");
     expect(styles.length).toBe(1);
-    expect(styles[0].textContent).toContain("animation-play-state:paused");
+    expect(styles[0].textContent).toContain("animation:none");
 
     window.__ableInspect!.applyAccessibilityProfile({ reducedMotion: true });
     expect(document.querySelectorAll("#__able-a11y-style").length).toBe(1);

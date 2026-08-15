@@ -13,17 +13,16 @@ function stubFetch() {
   );
 }
 
-describe("Workbench — Inspect mode nav (real workbench, not the disconnected fixture route; renamed from 'Contrast Lab' since it also covers keyboard replay, CVD simulation, and the AX tree)", () => {
-  it("defaults to the live preview iframe", () => {
+describe("Workbench — Inspect tab (left-column tools + shared right preview)", () => {
+  it("always shows the shared live preview on the right", () => {
     stubFetch();
     render(
       <Workbench auditId="audit-1" targetUrl="https://example.com" auditStatus="complete" findings={[]} />
     );
     expect(screen.getByTitle("Live preview of https://example.com")).toBeInTheDocument();
-    expect(screen.queryByTitle("Explore preview")).not.toBeInTheDocument();
   });
 
-  it("clicking 'Inspect' swaps the right pane to the real ExplorePanel, wired with the real auditId", () => {
+  it("clicking 'Inspect' shows the Element Inspector rail in the left column while the preview stays on the right", () => {
     stubFetch();
     render(
       <Workbench auditId="audit-1" targetUrl="https://example.com" auditStatus="complete" findings={[]} />
@@ -31,21 +30,23 @@ describe("Workbench — Inspect mode nav (real workbench, not the disconnected f
 
     fireEvent.click(screen.getByText("Inspect"));
 
-    expect(screen.getByTitle("Explore preview")).toBeInTheDocument();
-    expect(screen.queryByTitle("Live preview of https://example.com")).not.toBeInTheDocument();
+    expect(screen.getByTestId("inspect-rail")).toBeInTheDocument();
     expect(screen.getByText("Element Inspector")).toBeInTheDocument();
+    // The preview is fixed on the right, not swapped away.
+    expect(screen.getByTitle("Live preview of https://example.com")).toBeInTheDocument();
   });
 
-  it("switching back to 'Checklist' mode restores the live iframe", () => {
+  it("switching back to 'Checklist' hides the inspector rail (preview stays)", () => {
     stubFetch();
     render(
       <Workbench auditId="audit-1" targetUrl="https://example.com" auditStatus="complete" findings={[]} />
     );
 
     fireEvent.click(screen.getByText("Inspect"));
-    expect(screen.getByTitle("Explore preview")).toBeInTheDocument();
+    expect(screen.getByTestId("inspect-rail")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Checklist"));
+    expect(screen.queryByTestId("inspect-rail")).not.toBeInTheDocument();
     expect(screen.getByTitle("Live preview of https://example.com")).toBeInTheDocument();
   });
 });

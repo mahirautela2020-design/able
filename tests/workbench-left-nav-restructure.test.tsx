@@ -14,7 +14,7 @@ function stubFetch() {
 }
 
 describe("Workbench — left-column mode nav (regression: Inspect/Screen Reader were buried in a toolbar button and a page-level section below the whole workbench)", () => {
-  it("switching to 'Screen Reader' mode replaces the main area with the merged SrPreview+NvdaPanel panel", () => {
+  it("switching to 'Screen Reader' shows the merged SrPreview+NvdaPanel in the left column while the preview stays on the right", () => {
     stubFetch();
     render(
       <Workbench auditId="audit-1" targetUrl="https://example.com" auditStatus="complete" findings={[]} />
@@ -23,7 +23,8 @@ describe("Workbench — left-column mode nav (regression: Inspect/Screen Reader 
     fireEvent.click(screen.getByText("Screen Reader"));
 
     expect(screen.getByTestId("screen-reader-panel")).toBeInTheDocument();
-    expect(screen.queryByTitle("Live preview of https://example.com")).not.toBeInTheDocument();
+    // Preview is fixed on the right for every tab now (not swapped away).
+    expect(screen.getByTitle("Live preview of https://example.com")).toBeInTheDocument();
   });
 
   it("all four principle labels render as visible section headers (regression: unlabeled numeric tabs '1'/'2'/'3'/'4')", () => {
