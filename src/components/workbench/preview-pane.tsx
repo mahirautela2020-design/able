@@ -224,7 +224,7 @@ export function PreviewPane({
               </div>
             )}
             {renderState === "blocked" && (
-              <div className="h-full flex flex-col items-center justify-center gap-2 p-6 text-center">
+              <div className="h-full flex flex-col items-center justify-center gap-2 p-6 text-center animate-in fade-in duration-200 ease-out motion-reduce:animate-none">
                 <p className="text-sm font-medium">Live preview isn&apos;t available for this site</p>
                 <p className="text-xs text-muted-foreground max-w-sm">
                   <span className="font-medium">{targetUrl}</span> is behind bot-detection (e.g.
@@ -251,7 +251,7 @@ export function PreviewPane({
           // Proxy couldn't render the page live — fall back to the audit's
           // own captured screenshot rather than a blank/broken iframe.
           <div className="absolute inset-0 overflow-auto">
-            <div className="sticky top-0 z-10 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 px-4 py-2 text-center text-[11px] text-amber-800 dark:text-amber-300">
+            <div className="sticky top-0 z-10 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 px-4 py-2 text-center text-[11px] text-amber-800 dark:text-amber-300 animate-in fade-in slide-in-from-top-1 duration-200 ease-out motion-reduce:animate-none">
               Live preview isn&apos;t available for this site — showing the screenshot captured
               during the audit instead. Your audit results aren&apos;t affected.
             </div>
@@ -263,7 +263,7 @@ export function PreviewPane({
             />
           </div>
         ) : proxyFailed ? (
-          <div className="h-full flex flex-col items-center justify-center gap-2 p-6 text-center">
+          <div className="h-full flex flex-col items-center justify-center gap-2 p-6 text-center animate-in fade-in duration-200 ease-out motion-reduce:animate-none">
             <p className="text-sm font-medium">Preview isn&apos;t available for this site right now</p>
             <p className="text-xs text-muted-foreground max-w-sm">
               <span className="font-medium">{targetUrl}</span> couldn&apos;t be rendered here — likely
@@ -299,7 +299,7 @@ export function PreviewPane({
             />
 
             {frameBlocked && (
-              <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 px-3 py-1 rounded-full bg-black/60 text-white text-[11px] whitespace-nowrap">
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 px-3 py-1 rounded-full bg-black/60 text-white text-[11px] whitespace-nowrap animate-in fade-in slide-in-from-top-1 duration-200 ease-out motion-reduce:animate-none">
                 {targetUrl} blocks direct embedding — shown via proxy
               </div>
             )}
@@ -326,7 +326,11 @@ export function PreviewPane({
                     <div
                       key={s.selector}
                       data-testid={`focus-ring-${i}`}
-                      className={`absolute border-2 rounded-sm ${
+                      // Glides between steps instead of teleporting — this
+                      // ring IS the tool's demonstration of tab order, so
+                      // showing the path between elements reinforces what's
+                      // being tested, not just decoration.
+                      className={`absolute border-2 rounded-sm transition-all duration-200 ease-out motion-reduce:transition-none ${
                         i === ctrl.current
                           ? "border-red-500 bg-red-500/10"
                           : "border-blue-400/70 bg-transparent"
