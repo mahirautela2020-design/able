@@ -8,9 +8,6 @@ export function Footer() {
           © {new Date().getFullYear()} ScanA11y — WCAG 2.2 accessibility auditing
         </p>
         <nav className="flex items-center gap-5" aria-label="Legal">
-          <Link href="/about" className="hover:text-foreground transition-colors">
-            About
-          </Link>
           <Link href="/privacy" className="hover:text-foreground transition-colors">
             Privacy Policy
           </Link>

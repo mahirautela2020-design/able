@@ -211,7 +211,7 @@ describe("preview-proxy — asset bridge injection (regression: relay URL was re
     expect(body).not.toContain('src="/scripts/app.js"');
   });
 
-  it("leaves classic (non-module) scripts untouched — they're exempt from CORS on load", async () => {
+  it("relays classic (non-module) same-origin scripts too — not for CORS, but because they're the first hop for a script's own later fetch/XHR calls that only the client-side bridge can rewrite", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({
@@ -225,7 +225,30 @@ describe("preview-proxy — asset bridge injection (regression: relay URL was re
     const req = new NextRequest("http://localhost:3000/api/preview-proxy?url=https://example.com/page");
     const res = await proxyGet(req);
     const body = await res.text();
-    expect(body).toContain('<script src="/scripts/app.js">');
+    expect(body).toContain(
+      'src="http://localhost:3000/api/preview-proxy-asset?url=' +
+        encodeURIComponent("https://example.com/scripts/app.js") +
+        '"'
+    );
+    expect(body).not.toContain('src="/scripts/app.js"');
+  });
+
+  it("leaves classic scripts pointed at a THIRD-PARTY origin untouched — only same-origin-as-target scripts are relayed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: { get: (n: string) => (n === "content-type" ? "text/html; charset=utf-8" : null) },
+        text: async () =>
+          '<html><head><script src="https://cdn.example.net/analytics.js"></script></head><body></body></html>',
+      }))
+    );
+    const req = new NextRequest("http://localhost:3000/api/preview-proxy?url=https://example.com/page");
+    const res = await proxyGet(req);
+    const body = await res.text();
+    expect(body).toContain('<script src="https://cdn.example.net/analytics.js">');
   });
 
   it("relays <link rel=stylesheet> through the asset relay so its own cross-origin @font-face references stay CORS-free", async () => {
