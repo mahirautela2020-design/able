@@ -430,6 +430,21 @@ export async function uploadEvidence(
   return data.publicUrl;
 }
 
+/** Download raw bytes from the evidence bucket, or null if the object doesn't exist. */
+export async function downloadEvidence(path: string): Promise<Buffer | null> {
+  const { data, error } = await supabase.storage.from("evidence").download(path);
+  if (error || !data) return null;
+  return Buffer.from(await data.arrayBuffer());
+}
+
+/** Invalidate a completed audit's cached PDF — call whenever findings for
+ * that audit change after it was marked complete (e.g. a new Inspect-panel
+ * contrast finding), so the next download regenerates instead of serving a
+ * stale cache. Best-effort: a missing cache object is not an error. */
+export async function invalidatePdfCache(auditId: string): Promise<void> {
+  await supabase.storage.from("evidence").remove([`${auditId}/report-${auditId}.pdf`]);
+}
+
 export async function createSignedUrl(
   path: string,
   expiresIn = 3600

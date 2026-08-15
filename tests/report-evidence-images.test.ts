@@ -74,15 +74,15 @@ describe("buildReportHtml — findings + evidence are merged into one section (r
 
     const html = await buildReportHtml("audit-1");
 
-    expect(html).toContain("<h2>Findings</h2>");
+    expect(html).toContain('<h2 id="findings">Findings</h2>');
     expect(html).not.toContain("<h2>Evidence</h2>");
     expect(html).toContain('src="https://storage.example/evidence/audit-1/crop.webp"');
     expect(html).toContain("Insufficient color contrast");
     expect(html).toContain("1.4.3");
     // The Findings section (which now carries screenshots) must appear
     // before the Compliance Matrix, not after it.
-    expect(html.indexOf("<h2>Findings</h2>")).toBeLessThan(
-      html.indexOf("<h2>WCAG 2.2 Compliance Matrix</h2>")
+    expect(html.indexOf('<h2 id="findings">Findings</h2>')).toBeLessThan(
+      html.indexOf('<h2 id="matrix">WCAG 2.2 Compliance Matrix</h2>')
     );
   });
 
@@ -91,7 +91,7 @@ describe("buildReportHtml — findings + evidence are merged into one section (r
 
     const html = await buildReportHtml("audit-1");
 
-    expect(html).toContain("<h2>Findings</h2>");
+    expect(html).toContain('<h2 id="findings">Findings</h2>');
     expect(html).toContain("No screenshot captured for this finding.");
     expect(html).not.toContain("<img");
   });
@@ -104,6 +104,42 @@ describe("buildReportHtml — findings + evidence are merged into one section (r
     const html = await buildReportHtml("audit-1");
 
     expect(html).toContain('src="https://storage.example/evidence/audit-1/full.webp"');
+  });
+});
+
+describe("buildReportHtml — findings are grouped by severity with a jump-link table of contents (DB insertion order has no relationship to importance — a reader should be able to triage critical issues first)", () => {
+  it("groups findings under severity subheadings, worst severity first, each with a jump-link anchor", async () => {
+    state.findings = [
+      { ...baseFinding, id: "f-minor", severity: "minor", rule_title: "Minor issue" },
+      { ...baseFinding, id: "f-critical", severity: "critical", rule_title: "Critical issue" },
+      { ...baseFinding, id: "f-serious", severity: "serious", rule_title: "Serious issue" },
+    ];
+
+    const html = await buildReportHtml("audit-1");
+
+    expect(html).toContain('id="findings-critical"');
+    expect(html).toContain('id="findings-serious"');
+    expect(html).toContain('id="findings-minor"');
+    // Worst-first ordering: critical heading appears before serious, which
+    // appears before minor.
+    const criticalIdx = html.indexOf('id="findings-critical"');
+    const seriousIdx = html.indexOf('id="findings-serious"');
+    const minorIdx = html.indexOf('id="findings-minor"');
+    expect(criticalIdx).toBeLessThan(seriousIdx);
+    expect(seriousIdx).toBeLessThan(minorIdx);
+  });
+
+  it("renders a table of contents linking to Executive Summary, each severity group, and the Compliance Matrix", async () => {
+    state.findings = [baseFinding];
+
+    const html = await buildReportHtml("audit-1");
+
+    expect(html).toContain('<a href="#summary">Executive Summary</a>');
+    expect(html).toContain('<a href="#findings-serious">');
+    expect(html).toContain('<a href="#matrix">WCAG 2.2 Compliance Matrix</a>');
+    // Anchors must actually exist on the headings they point to.
+    expect(html).toContain('id="summary"');
+    expect(html).toContain('id="matrix"');
   });
 });
 

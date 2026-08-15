@@ -17,9 +17,10 @@ interface AuditRow {
   created_by: string | null;
 }
 
-const { insertFindings, uploadEvidence, getAuditPageId, getAudit } = vi.hoisted(() => ({
+const { insertFindings, uploadEvidence, getAuditPageId, getAudit, invalidatePdfCache } = vi.hoisted(() => ({
   insertFindings: vi.fn<(rows: Record<string, unknown>[]) => Promise<void>>(async () => {}),
   uploadEvidence: vi.fn(async () => "https://example.com/evidence/crop.webp"),
+  invalidatePdfCache: vi.fn<(auditId: string) => Promise<void>>(async () => {}),
   getAuditPageId: vi.fn<(auditId: string, pageUrl?: string) => Promise<string | null>>(
     async () => "page-1"
   ),
@@ -44,6 +45,7 @@ vi.mock("@/lib/supabase/server", () => ({
   getAuditPageId,
   insertFindings,
   uploadEvidence,
+  invalidatePdfCache,
 }));
 
 const { sanitizeUrl, validateHost } = vi.hoisted(() => ({
@@ -393,6 +395,23 @@ describe("POST /api/audits/[id]/contrast-finding", () => {
         { params: Promise.resolve({ id: "audit-1" }) }
       );
       expect(res.status).toBe(201);
+    });
+  });
+
+  describe("PDF cache invalidation (regression: a contrast-lab finding added after an audit completed could be added AFTER its PDF was already cached — download route has no way to know the cache is now stale without this)", () => {
+    it("invalidates the audit's cached PDF after persisting a new finding", async () => {
+      await POST(makeRequest(failingBody), { params: Promise.resolve({ id: "audit-1" }) });
+      await new Promise((r) => setTimeout(r, 0)); // fire-and-forget call
+      expect(invalidatePdfCache).toHaveBeenCalledWith("audit-1");
+    });
+
+    it("does NOT invalidate when the finding is rejected (pair already passes)", async () => {
+      await POST(
+        makeRequest({ ...failingBody, fg: "#000000", bg: "#ffffff" }),
+        { params: Promise.resolve({ id: "audit-1" }) }
+      );
+      await new Promise((r) => setTimeout(r, 0));
+      expect(invalidatePdfCache).not.toHaveBeenCalled();
     });
   });
 
