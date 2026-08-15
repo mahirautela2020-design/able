@@ -26,6 +26,9 @@ interface AccessibilityOptionsPanelProps {
   onApply: (settings: AccessibilityProfileSettings) => void;
   orientation: Orientation;
   onOrientationChange: (orientation: Orientation) => void;
+  /** "fab" (default) = UX4G-style floating button + panel overlay.
+   *  "inline" = render the controls directly (for the left-column tab). */
+  variant?: "fab" | "inline";
 }
 
 export const DEFAULT_A11Y_SETTINGS: AccessibilityProfileSettings = {
@@ -105,6 +108,7 @@ export function AccessibilityOptionsPanel({
   onApply,
   orientation,
   onOrientationChange,
+  variant = "fab",
 }: AccessibilityOptionsPanelProps) {
   const [open, setOpen] = useState(false);
   const [settings, setSettings] = useState<AccessibilityProfileSettings>(DEFAULT_A11Y_SETTINGS);
@@ -137,36 +141,8 @@ export function AccessibilityOptionsPanel({
     setSettings((s) => ({ ...s, ...updates }));
   }
 
-  return (
-    <>
-      <button
-        data-testid="a11y-options-fab"
-        onClick={() => setOpen((v) => !v)}
-        title="Accessibility Options (Ctrl+F2)"
-        aria-expanded={open}
-        className="absolute bottom-4 right-4 z-40 w-11 h-11 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center text-lg hover:opacity-90 transition-opacity"
-      >
-        ♿
-      </button>
-
-      {open && (
-        <div
-          ref={panelRef}
-          data-testid="a11y-options-panel"
-          className="absolute bottom-20 right-4 z-40 w-80 max-h-[85%] overflow-y-auto rounded-lg border bg-background shadow-xl text-xs"
-        >
-          <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/20 sticky top-0">
-            <span className="font-semibold">Accessibility Options</span>
-            <button
-              onClick={() => setOpen(false)}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Close accessibility options"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="p-3 space-y-3">
+  const body = (
+    <div className="p-3 space-y-3">
             {/* Profiles */}
             <section>
               <h4 className="font-semibold mb-1.5">Profiles</h4>
@@ -405,7 +381,46 @@ export function AccessibilityOptionsPanel({
                 ))}
               </div>
             </section>
+    </div>
+  );
+
+  if (variant === "inline") {
+    return (
+      <div data-testid="a11y-options-inline" className="h-full overflow-y-auto text-xs">
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <button
+        data-testid="a11y-options-fab"
+        onClick={() => setOpen((v) => !v)}
+        title="Accessibility Options (Ctrl+F2)"
+        aria-expanded={open}
+        className="absolute bottom-4 right-4 z-40 w-11 h-11 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center text-lg hover:opacity-90 transition-opacity"
+      >
+        ♿
+      </button>
+
+      {open && (
+        <div
+          ref={panelRef}
+          data-testid="a11y-options-panel"
+          className="absolute bottom-20 right-4 z-40 w-80 max-h-[85%] overflow-y-auto rounded-lg border bg-background shadow-xl text-xs"
+        >
+          <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/20 sticky top-0">
+            <span className="font-semibold">Accessibility Options</span>
+            <button
+              onClick={() => setOpen(false)}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Close accessibility options"
+            >
+              ✕
+            </button>
           </div>
+          {body}
         </div>
       )}
     </>
