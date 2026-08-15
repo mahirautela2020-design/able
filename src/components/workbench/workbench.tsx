@@ -1,14 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getWcagRegistry, type WcagSuccessCriterion } from "@/engine/wcag-registry";
 import { supabase, authHeaders } from "@/lib/supabase/client";
-import { ExplorePanel } from "@/components/workbench/explore/explore-panel";
 import { ScreenReaderPanel } from "@/components/workbench/explore/screen-reader-panel";
+import { PreviewPane } from "@/components/workbench/preview-pane";
+import { InspectRail } from "@/components/workbench/explore/inspect-rail";
+import { useExplore } from "@/components/workbench/explore/use-explore";
+import {
+  AccessibilityOptionsPanel,
+  type Orientation,
+} from "@/components/workbench/explore/accessibility-options";
+
+type WorkbenchTab = "checklist" | "inspect" | "screen-reader" | "a11y";
 
 export interface WorkbenchFinding {
   id: string;
@@ -78,8 +86,9 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [levelFilter, setLevelFilter] = useState<"ALL" | "A" | "AA" | "AAA">("ALL");
   const [previewKey, setPreviewKey] = useState(0); // reload iframe
   const [frameBlocked, setFrameBlocked] = useState(false);
-  const [mainMode, setMainMode] = useState<"preview" | "explore" | "screen-reader">("preview");
-  const [showScreenshot, setShowScreenshot] = useState(false);
+  const [activeTab, setActiveTab] = useState<WorkbenchTab>("checklist");
+  const [orientation, setOrientation] = useState<Orientation>("landscape");
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [hasDownloadedPdf, setHasDownloadedPdf] = useState(false);
   const [rerunWarning, setRerunWarning] = useState<{ urlOverride?: string } | null>(null);
@@ -91,10 +100,21 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [startedAt, setStartedAt] = useState(0);
   const [liveFindings, setLiveFindings] = useState<WorkbenchFinding[]>(findings);
   const [status, setStatus] = useState(auditStatus);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [progress, setProgress] = useState<Record<string, unknown> | null>(null);
+  const [stopping, setStopping] = useState(false);
 
   // Full WCAG 2.2 registry (86 SCs) — the checklist the user sees.
   const registry = useMemo(() => getWcagRegistry(), []);
+
+  // Shared Inspect/Accessibility controller — drives the single preview
+  // iframe (right column) so the left-column tools can act on it.
+  const ctrl = useExplore({
+    iframeRef,
+    targetUrl,
+    auditId,
+    enabled: activeTab === "inspect",
+  });
 
   // Live-poll while the audit is queued/running so the checklist fills in
   // as pages finish. Stops once complete/failed. Also ticks the clock so
@@ -116,6 +136,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
         const json = await res.json();
         if (stopped) return;
         setStatus(json.audit?.status ?? status);
+        setErrorCode(json.audit?.error_code ?? null);
         setProgress(json.audit?.progress ?? null);
         if (Array.isArray(json.findings)) setLiveFindings(json.findings);
       } catch {
@@ -324,6 +345,26 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
     }
   }
 
+  // Stop a queued/running audit. The server marks it failed/CANCELLED and the
+  // scan pipeline bails between pages; we optimistically reflect that here so
+  // the UI updates immediately (polling would otherwise catch it next tick).
+  async function handleStop() {
+    if (stopping) return;
+    setStopping(true);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`/api/audits/${auditId}/cancel`, { method: "POST", headers });
+      if (res.ok) {
+        setStatus("failed");
+        setErrorCode("CANCELLED");
+      }
+    } catch (e) {
+      console.error("Stop failed:", e);
+    } finally {
+      setStopping(false);
+    }
+  }
+
   return (
     <div className="relative flex h-full border rounded-lg overflow-hidden bg-background">
       {/* ── LEFT: WCAG checklist ── */}
@@ -346,22 +387,33 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
                 <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
               ) : status === "complete" ? (
                 <span className="h-2 w-2 rounded-full bg-green-500" />
+              ) : status === "failed" && errorCode === "CANCELLED" ? (
+                <span className="h-2 w-2 rounded-full bg-amber-500" />
               ) : status === "failed" ? (
                 <span className="h-2 w-2 rounded-full bg-red-500" />
               ) : (
                 <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
               )}
-              <span className="text-xs font-semibold capitalize">
-                {statusLabel(status)}
+              <span className="text-xs font-semibold">
+                {auditStatusLabel(status, errorCode)}
               </span>
             </div>
+            {(status === "running" || status === "queued") && (
+              <button
+                onClick={handleStop}
+                disabled={stopping}
+                className="text-[11px] px-2 py-0.5 rounded border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors disabled:opacity-50"
+              >
+                {stopping ? "Stopping…" : "Stop"}
+              </button>
+            )}
             {status === "failed" && (
               <button
                 onClick={() => handleRerun()}
                 disabled={rerunning}
                 className="text-[11px] px-2 py-0.5 rounded border hover:bg-accent/50 transition-colors disabled:opacity-50"
               >
-                {rerunning ? "Starting…" : "Re-run"}
+                {rerunning ? "Starting…" : "Retry"}
               </button>
             )}
           </div>
@@ -400,28 +452,34 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
               Audit complete — {liveFindings.length} findings across {bySc.size} criteria.
             </p>
           )}
-          {status === "failed" && (
+          {status === "failed" && errorCode === "CANCELLED" && (
+            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+              Audit stopped. Any pages already scanned are shown below — or retry.
+            </p>
+          )}
+          {status === "failed" && errorCode !== "CANCELLED" && (
             <p className="text-[11px] text-red-600 dark:text-red-400">
-              Audit failed. Check the pages below or re-run.
+              Audit failed. Check the pages below or retry.
             </p>
           )}
         </div>
 
-        {/* Mode nav: switches what the main (right) area shows. Checklist
-            stays visible in this column regardless of mode. */}
+        {/* Tab nav — each tab renders its content in THIS left column; the
+            right column always shows the shared live preview. */}
         <div className="flex border-b text-xs">
           {(
             [
-              { key: "preview", label: "Checklist" },
-              { key: "explore", label: "Inspect" },
+              { key: "checklist", label: "Checklist" },
+              { key: "inspect", label: "Inspect" },
               { key: "screen-reader", label: "Screen Reader" },
+              { key: "a11y", label: "Accessibility" },
             ] as const
           ).map((m) => (
             <button
               key={m.key}
-              onClick={() => setMainMode(m.key)}
+              onClick={() => setActiveTab(m.key)}
               className={`flex-1 py-2 px-1 font-medium transition-colors ${
-                mainMode === m.key
+                activeTab === m.key
                   ? "text-primary border-b-2 border-primary"
                   : "text-muted-foreground hover:text-foreground"
               }`}
@@ -431,6 +489,8 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           ))}
         </div>
 
+        {activeTab === "checklist" && (
+        <>
         {/* Level filter: which standard/conformance level to show */}
         <div className="flex border-b text-[11px]">
           {(["ALL", "A", "AA", "AAA"] as const).map((lvl) => (
@@ -525,6 +585,29 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
             Clear selection
           </button>
         </div>
+        </>
+        )}
+
+        {activeTab === "inspect" && (
+          <div className="flex-1 min-h-0">
+            <InspectRail ctrl={ctrl} />
+          </div>
+        )}
+        {activeTab === "screen-reader" && (
+          <div className="flex-1 min-h-0">
+            <ScreenReaderPanel auditId={auditId} />
+          </div>
+        )}
+        {activeTab === "a11y" && (
+          <div className="flex-1 min-h-0">
+            <AccessibilityOptionsPanel
+              variant="inline"
+              onApply={ctrl.handleApplyA11yProfile}
+              orientation={orientation}
+              onOrientationChange={setOrientation}
+            />
+          </div>
+        )}
       </aside>
 
       {/* ── RIGHT: live preview + findings ── */}
@@ -627,97 +710,16 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
           </div>
         </div>
 
-        {/* Preview-blocked notice: single row (previously duplicated across
-            two stacked rows — a dismissible banner plus a second, permanent
-            toolbar with the same message). Owns the proxy-vs-screenshot
-            toggle and "Open live site" link — not dismissible, since
-            dismissing didn't change anything about the underlying block and
-            previously just hid the only place those controls lived. */}
-        {frameBlocked && mainMode === "preview" && (
-          <div className="flex items-center justify-between gap-3 px-3 py-2 border-b bg-amber-50 dark:bg-amber-950/40 text-xs">
-            <p className="text-amber-800 dark:text-amber-300 min-w-0 truncate">
-              <span className="font-medium">{targetUrl}</span> blocks embedding — previewing via
-              proxy{firstScreenshot ? " (or view the captured screenshot)" : ""}.
-            </p>
-            <div className="flex items-center gap-2 shrink-0">
-              {firstScreenshot && (
-                <button
-                  onClick={() => setShowScreenshot((s) => !s)}
-                  className={`px-2 py-1 rounded border transition-colors ${
-                    showScreenshot
-                      ? "bg-primary text-primary-foreground border-transparent"
-                      : "border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40"
-                  }`}
-                >
-                  {showScreenshot ? "Live preview" : "Audited screenshot"}
-                </button>
-              )}
-              <a
-                href={targetUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-2 py-1 rounded border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
-              >
-                Open live site
-              </a>
-            </div>
-          </div>
-        )}
-
-        {mainMode === "explore" ? (
-          <div className="flex-1 min-h-0 bg-white">
-            <ExplorePanel targetUrl={targetUrl} auditId={auditId} />
-          </div>
-        ) : mainMode === "screen-reader" ? (
-          <div className="flex-1 min-h-0 bg-white">
-            <ScreenReaderPanel auditId={auditId} />
-          </div>
-        ) : (
-        <>
-        {/* Preview: sandboxed live iframe. For sites that block embedding
-            (X-Frame-Options/CSP), we PROXY the page through our own origin
-            (/api/preview-proxy) — the iframe sees OUR headers, so the
-            browser renders it. The audited screenshot stays available via
-            the "Audited screenshot" toggle in the banner above. */}
-        <div className="flex-1 min-h-0 bg-white flex relative">
-          <iframe
-            key={previewKey}
-            src={
-              frameBlocked
-                ? `/api/preview-proxy?url=${encodeURIComponent(targetUrl)}`
-                : targetUrl
-            }
-            title={`Live preview of ${targetUrl}`}
-            sandbox="allow-scripts allow-forms allow-popups"
-            className={`w-full h-full border-0 ${frameBlocked ? "hidden" : ""}`}
-          />
-          {frameBlocked && (
-            <div className="absolute inset-0 flex flex-col bg-background">
-              {showScreenshot && firstScreenshot ? (
-                <div className="flex-1 overflow-auto">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={firstScreenshot}
-                    alt={`Full-page screenshot of ${targetUrl} captured during audit`}
-                    className="w-full"
-                  />
-                </div>
-              ) : (
-                !showScreenshot && (
-                  <div className="flex-1 overflow-auto">
-                    <iframe
-                      src={`/api/preview-proxy?url=${encodeURIComponent(targetUrl)}`}
-                      title={`Proxied preview of ${targetUrl}`}
-                      className="w-full h-full border-0"
-                    />
-                  </div>
-                )
-              )}
-            </div>
-          )}
-        </div>
-        </>
-        )}
+        <PreviewPane
+          targetUrl={targetUrl}
+          previewKey={previewKey}
+          iframeRef={iframeRef}
+          interactive={activeTab === "inspect"}
+          ctrl={ctrl}
+          orientation={orientation}
+          firstScreenshot={firstScreenshot}
+          frameBlocked={frameBlocked}
+        />
 
         {/* Findings drawer for selected SC */}
         {activeSc && (
@@ -850,6 +852,23 @@ export function formatEta(seconds: number): string {
   if (seconds < 60) return "<1 min left";
   const minutes = Math.round(seconds / 60);
   return `~${minutes} min left`;
+}
+
+/** Human label for the AUDIT lifecycle status (distinct from per-SC finding
+ * status). A failed audit carrying error_code "CANCELLED" reads as "Stopped". */
+export function auditStatusLabel(status: string, errorCode?: string | null): string {
+  switch (status) {
+    case "queued":
+      return "Queued";
+    case "running":
+      return "Running";
+    case "complete":
+      return "Completed";
+    case "failed":
+      return errorCode === "CANCELLED" ? "Stopped" : "Failed";
+    default:
+      return status.charAt(0).toUpperCase() + status.slice(1);
+  }
 }
 
 function statusLabel(status: string): string {
