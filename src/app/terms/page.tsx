@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Footer } from "@/components/footer";
 
 export const metadata: Metadata = {
   title: "Terms of Service — ScanA11y",
@@ -6,6 +7,7 @@ export const metadata: Metadata = {
 
 export default function TermsOfService() {
   return (
+    <>
     <div className="flex-1 w-full max-w-3xl mx-auto px-4 py-12 prose prose-neutral dark:prose-invert">
       <h1 className="text-3xl font-bold tracking-tight">Terms of Service</h1>
       <p className="text-muted-foreground text-sm">Last updated: August 2026</p>
@@ -81,5 +83,7 @@ export default function TermsOfService() {
         channel provided at sign-up.
       </p>
     </div>
+    <Footer />
+    </>
   );
 }

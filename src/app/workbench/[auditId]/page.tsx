@@ -52,7 +52,7 @@ export default async function WorkbenchPage({
   );
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col">
+    <div className="h-screen flex flex-col">
       <div className="flex-1 min-h-0">
         <Workbench
           auditId={auditId}
