@@ -81,12 +81,12 @@ const statusColor: Record<string, string> = {
   "not-applicable": "bg-gray-50 text-gray-400",
 };
 
-const statusIcon: Record<string, string> = {
-  "automated-pass": "✅",
-  fail: "❌",
-  "needs-review": "👁️",
-  manual: "🖐️",
-  "not-applicable": "—",
+const statusLabel: Record<string, string> = {
+  "automated-pass": "Pass",
+  fail: "Fail",
+  "needs-review": "Needs review",
+  manual: "Manual check",
+  "not-applicable": "N/A",
 };
 
 const severityColor: Record<string, string> = {
@@ -297,7 +297,7 @@ export function ReportViewer({ auditId }: { auditId: string }) {
                               <span
                                 className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${statusColor[sc.status] || ""}`}
                               >
-                                {statusIcon[sc.status]} {sc.status}
+                                {statusLabel[sc.status] || sc.status}
                               </span>
                             </TableCell>
                             <TableCell>{sc.findingsCount || ""}</TableCell>
