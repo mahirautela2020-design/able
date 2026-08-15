@@ -52,7 +52,7 @@ afterEach(() => {
 });
 
 async function openWithTranscript() {
-  render(<SrPreview auditId="audit-1" />);
+  render(<SrPreview auditId="audit-1" targetUrl="https://example.com" />);
   fireEvent.click(screen.getByText("SR Preview (AX tree)"));
   await waitFor(() => expect(screen.getByTestId("sr-read-aloud")).toBeInTheDocument());
 }

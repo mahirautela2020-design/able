@@ -16,9 +16,11 @@ function stubFetch(payload: unknown) {
 }
 
 describe("NvdaPanel", () => {
-  it("renders the Screen reader (NVDA) header", () => {
+  it("renders as plain always-visible text, not a collapsible section", () => {
     render(<NvdaPanel auditId="audit-1" />);
     expect(screen.getByText("Screen reader (NVDA)")).toBeInTheDocument();
+    expect(screen.getByText(/only run when this app is running locally/i)).toBeInTheDocument();
+    expect(screen.getByText("Run local NVDA check")).toBeInTheDocument();
   });
 
   it("shows an honest unavailable note when NVDA is not present", async () => {
@@ -31,12 +33,11 @@ describe("NvdaPanel", () => {
     });
 
     render(<NvdaPanel auditId="audit-1" />);
-    fireEvent.click(screen.getByText("Screen reader (NVDA)"));
+    fireEvent.click(screen.getByText("Run local NVDA check"));
 
     await waitFor(() => {
-      expect(screen.getByText(/locally with NVDA installed/i)).toBeInTheDocument();
+      expect(screen.getByText(/nvda-not-found/)).toBeInTheDocument();
     });
-    expect(screen.getByText(/nvda-not-found/)).toBeInTheDocument();
   });
 
   it("lists announcements and silent elements when NVDA is available", async () => {
@@ -64,7 +65,7 @@ describe("NvdaPanel", () => {
     });
 
     render(<NvdaPanel auditId="audit-1" />);
-    fireEvent.click(screen.getByText("Screen reader (NVDA)"));
+    fireEvent.click(screen.getByText("Run local NVDA check"));
 
     await waitFor(() => {
       expect(screen.getByText(/announces nothing/i)).toBeInTheDocument();
