@@ -9,10 +9,16 @@ import { NvdaPanel } from "@/components/workbench/nvda-panel";
  * together in one full-width panel instead of two sections stacked below
  * the whole workbench.
  */
-export function ScreenReaderPanel({ auditId }: { auditId: string }) {
+export function ScreenReaderPanel({
+  auditId,
+  targetUrl,
+}: {
+  auditId: string;
+  targetUrl: string;
+}) {
   return (
     <div className="h-full overflow-y-auto divide-y" data-testid="screen-reader-panel">
-      <SrPreview auditId={auditId} />
+      <SrPreview auditId={auditId} targetUrl={targetUrl} />
       <NvdaPanel auditId={auditId} />
     </div>
   );

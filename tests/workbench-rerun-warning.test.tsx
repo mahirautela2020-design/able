@@ -135,11 +135,9 @@ describe("Workbench — warn before a completed audit's results become hard to f
       <Workbench auditId="audit-1" targetUrl="https://example.com" auditStatus="failed" findings={[]} />
     );
 
-    // A failed audit shows a second, small "Re-run" button in the left
-    // status column in addition to the toolbar's — click the toolbar one
-    // (the last "Re-run" button in the DOM), same as the other tests here.
-    const rerunButtons = screen.getAllByText("Re-run");
-    fireEvent.click(rerunButtons[rerunButtons.length - 1]);
+    // A failed audit's re-run trigger lives in the left status column,
+    // labeled "Retry" (same requestRerun() gate as "Re-run" elsewhere).
+    fireEvent.click(screen.getByText("Retry"));
 
     expect(
       screen.queryByText("Download this report before starting a new audit?")
