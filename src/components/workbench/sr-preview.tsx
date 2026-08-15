@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { authHeaders } from "@/lib/supabase/client";
 
 interface SrPreviewProps {
@@ -24,15 +24,69 @@ export function SrPreview({ auditId }: SrPreviewProps) {
   const [isPaused, setIsPaused] = useState(false);
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
 
+  // Refs for keep-alive and error tracking
+  const keepAliveIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isSpeakingRef = useRef(false);
+  const lastErrorIndexRef = useRef<number | null>(null);
+  const consecutiveErrorsRef = useRef<number>(0);
+
   const speechSupported =
     typeof window !== "undefined" && "speechSynthesis" in window;
 
+  // Helper: ensure voices are loaded before speaking. Guarded for engines
+  // that expose speechSynthesis without the (optional) getVoices /
+  // addEventListener surface (older browsers, and the jsdom test stub) —
+  // there we simply proceed without waiting.
+  const ensureVoicesLoaded = useCallback(async () => {
+    if (!speechSupported) return;
+    const synth = window.speechSynthesis;
+    if (typeof synth.getVoices !== "function") return;
+    if (synth.getVoices().length > 0) return; // already loaded
+    if (typeof synth.addEventListener !== "function") return;
+
+    return new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => resolve(), 1000); // 1s fallback
+      const onVoicesChanged = () => {
+        clearTimeout(timeout);
+        synth.removeEventListener("voiceschanged", onVoicesChanged);
+        resolve();
+      };
+      synth.addEventListener("voiceschanged", onVoicesChanged);
+    });
+  }, [speechSupported]);
+
+  // Helper: get an English voice if available (null when the engine has no
+  // getVoices, e.g. the test stub — the utterance still carries lang).
+  const getEnglishVoice = useCallback(() => {
+    const synth = window.speechSynthesis;
+    if (typeof synth.getVoices !== "function") return null;
+    return (
+      synth.getVoices().find(
+        (voice) =>
+          voice.lang.startsWith("en") ||
+          voice.name.toLowerCase().includes("english")
+      ) || null
+    );
+  }, []);
+
+  // Clear keep-alive interval
+  const clearKeepAlive = useCallback(() => {
+    if (keepAliveIntervalRef.current) {
+      clearInterval(keepAliveIntervalRef.current);
+      keepAliveIntervalRef.current = null;
+    }
+  }, []);
+
   const stopSpeaking = useCallback(() => {
     if (speechSupported) window.speechSynthesis.cancel();
+    isSpeakingRef.current = false;
+    clearKeepAlive();
+    lastErrorIndexRef.current = null;
+    consecutiveErrorsRef.current = 0;
     setIsSpeaking(false);
     setIsPaused(false);
     setSpeakingIndex(null);
-  }, [speechSupported]);
+  }, [speechSupported, clearKeepAlive]);
 
   // Never leave speech running once this panel unmounts.
   useEffect(() => stopSpeaking, [stopSpeaking]);
@@ -67,32 +121,88 @@ export function SrPreview({ auditId }: SrPreviewProps) {
     setScrollIndex(0);
   }
 
-  function speakFrom(startIndex: number) {
+  async function speakFrom(startIndex: number) {
     if (!speechSupported || !lines || lines.length === 0) return;
+
+    // Ensure voices are loaded before starting
+    await ensureVoicesLoaded();
+
     window.speechSynthesis.cancel();
+    isSpeakingRef.current = true;
     setIsSpeaking(true);
     setIsPaused(false);
+    lastErrorIndexRef.current = null;
+    consecutiveErrorsRef.current = 0;
 
     let i = startIndex;
     const speakNext = () => {
       if (!lines || i >= lines.length) {
+        isSpeakingRef.current = false;
+        clearKeepAlive();
         setIsSpeaking(false);
         setSpeakingIndex(null);
+        lastErrorIndexRef.current = null;
+        consecutiveErrorsRef.current = 0;
         return;
       }
       const utterance = new SpeechSynthesisUtterance(lines[i]);
+
+      // Set language and voice
+      utterance.lang = "en-US";
+      const enVoice = getEnglishVoice();
+      if (enVoice) {
+        utterance.voice = enVoice;
+      }
+
       setSpeakingIndex(i);
+
       utterance.onend = () => {
+        lastErrorIndexRef.current = null;
+        consecutiveErrorsRef.current = 0;
         i += 1;
         speakNext();
       };
-      utterance.onerror = () => {
-        setIsSpeaking(false);
-        setSpeakingIndex(null);
+
+      utterance.onerror = (event) => {
+        // Ignore self-inflicted interruptions
+        if (event.error === "interrupted" || event.error === "canceled") {
+          return;
+        }
+
+        // Guard against infinite error loops
+        if (lastErrorIndexRef.current === i) {
+          consecutiveErrorsRef.current += 1;
+          if (consecutiveErrorsRef.current >= 3) {
+            isSpeakingRef.current = false;
+            clearKeepAlive();
+            setIsSpeaking(false);
+            setSpeakingIndex(null);
+            lastErrorIndexRef.current = null;
+            consecutiveErrorsRef.current = 0;
+            return;
+          }
+        } else {
+          lastErrorIndexRef.current = i;
+          consecutiveErrorsRef.current = 1;
+        }
+
+        // Advance to next line instead of killing the chain
+        i += 1;
+        speakNext();
       };
+
       window.speechSynthesis.speak(utterance);
     };
+
     speakNext();
+
+    // Set up keep-alive to prevent Chrome auto-pause on long reads
+    clearKeepAlive();
+    keepAliveIntervalRef.current = setInterval(() => {
+      if (isSpeakingRef.current) {
+        window.speechSynthesis.resume();
+      }
+    }, 10000); // Every 10 seconds
   }
 
   function handlePlayPause() {
