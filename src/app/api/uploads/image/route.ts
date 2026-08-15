@@ -1,4 +1,3 @@
-import { requireSession } from "@/lib/supabase/session";
 import { analyzeScreenshot } from "@/lib/vision";
 import { runDetector } from "@/lib/audit/detection";
 import type { DetectionFinding } from "@/lib/audit/detection-types";
@@ -15,11 +14,16 @@ const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp"]);
  * the vision model (Gemini 2.5 Flash by default) only SUGGESTS findings in
  * the needs_review bucket — the accuracy doctrine: LLM never creates
  * hard findings.
+ *
+ * Unlike the APK/IPA upload routes, this one doesn't persist anything to
+ * per-audit storage (no auditId, no ownership to protect) — it's a
+ * stateless one-shot analysis, so — matching the free-tier anonymous
+ * policy already used for URL audits (5/day per IP) — no session is
+ * required. Previously this hard-required a session, which is exactly why
+ * anonymous users hit "Missing or invalid authorization header" here even
+ * though URL audits worked fine for them.
  */
 export async function POST(request: Request) {
-  const auth = await requireSession(request);
-  if (!auth.ok) return auth.response;
-
   try {
     const contentType = request.headers.get("content-type") || "";
     if (!contentType.includes("multipart/form-data")) {
@@ -51,6 +55,27 @@ export async function POST(request: Request) {
     // (1.4.11) with math. It is a separate process (AGPL boundary) and
     // degrades gracefully to LLM-advisory-only when absent (serverless).
     const detection = await runDetector(buffer);
+
+    // ── Anti-fooling gate: reject uploads that plainly aren't a UI
+    // screenshot (a photo of a person, a landscape, etc) before treating
+    // them as one. Primary signal is the vision model's explicit
+    // classification. The deterministic detector can only OVERRIDE a
+    // "not a UI" verdict — if it measured real UI-shaped bounding boxes,
+    // trust that over the model. It can't be required to agree, though:
+    // the Python detector is unavailable on serverless (`degraded: true`
+    // in production for most deployments), so requiring its confirmation
+    // would make this gate never fire in the environment that matters most.
+    if (vision.isUiScreenshot === false && detection.elements.length === 0) {
+      return Response.json(
+        {
+          error:
+            vision.screenshotReason ||
+            "This doesn't look like a UI/website screenshot. Upload a screenshot of a website or app interface instead.",
+        },
+        { status: 422 }
+      );
+    }
+
     let deterministicFindings: DetectionFinding[] = [];
     if (!detection.degraded && detection.elements.length > 0) {
       const touchFindings = checkTouchTargets(detection.elements, 1);
@@ -92,6 +117,7 @@ export async function POST(request: Request) {
         detectionModel: detection.model,
         detectionDegraded: detection.degraded,
         detectionReason: detection.reason,
+        isUiScreenshot: vision.isUiScreenshot,
         note: "Vision suggestions require human review (needs_review bucket). Deterministic findings are measured (element boxes + pixel sampling), not LLM guesses.",
       },
     });

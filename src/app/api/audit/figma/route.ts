@@ -6,6 +6,34 @@ import { parseFigmaFile, collectFillableNodes, collectTextNodes } from "@/lib/fi
 import { extractColorPairs, checkContrastPairs } from "@/lib/audit/image-contrast";
 import { checkImageAlt } from "@/lib/audit/image-alt";
 
+/** Maps a thrown error's message to an HTTP status + user-facing text.
+ * Exported for unit testing without mocking the Figma network client. */
+export function mapFigmaError(message: string): { status: number; error: string } | null {
+  if (message.includes("FIGMA_PAT not configured")) {
+    return { status: 503, error: "Figma disabled: add FIGMA_PAT to environment" };
+  }
+  if (message.includes("Invalid file key") || message.includes("SSRF guard")) {
+    return { status: 400, error: message };
+  }
+  const figmaApiError = message.match(/^Figma API error \((\d+)\)/);
+  if (figmaApiError) {
+    const status = Number(figmaApiError[1]);
+    const friendly =
+      status === 404
+        ? "Figma file not found — check the file key or share URL."
+        : status === 403
+          ? "Access denied — you don't have permission to view this Figma file, or the PAT/OAuth token has expired."
+          : status === 429
+            ? "Figma API rate limit reached — try again shortly."
+            : `Figma API error (${status}) — the file may be inaccessible right now.`;
+    // 4xx from Figma is a client-fixable problem (bad key, no access), not
+    // a server fault — surface it as a 502 (we're a proxy to their API)
+    // rather than the misleading 500 this used to fall through to.
+    return { status: status >= 500 ? 502 : status, error: friendly };
+  }
+  return null;
+}
+
 export async function POST(request: Request) {
   // Authenticate: the caller must be a logged-in user (their OAuth token is
   // used to fetch THEIR Figma files). FIGMA_AUDIT_PUBLIC=true keeps the
@@ -86,15 +114,9 @@ export async function POST(request: Request) {
       },
     });
   } catch (e) {
-    const message = (e as Error).message;
-    if (message.includes("FIGMA_PAT not configured")) {
-      return Response.json(
-        { error: "Figma disabled: add FIGMA_PAT to environment" },
-        { status: 503 }
-      );
-    }
-    if (message.includes("Invalid file key") || message.includes("SSRF guard")) {
-      return Response.json({ error: message }, { status: 400 });
+    const mapped = mapFigmaError((e as Error).message);
+    if (mapped) {
+      return Response.json({ error: mapped.error }, { status: mapped.status });
     }
     console.error("POST /api/audit/figma error:", e);
     return Response.json({ error: "Internal server error" }, { status: 500 });
