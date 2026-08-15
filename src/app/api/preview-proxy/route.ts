@@ -176,16 +176,40 @@ export async function GET(request: NextRequest) {
       }
       if(window.HTMLScriptElement) patchUrlProp(window.HTMLScriptElement.prototype,"src");
       if(window.HTMLLinkElement) patchUrlProp(window.HTMLLinkElement.prototype,"href");
+      // Images are covered too — some bot-detection sensors (Akamai et al.)
+      // ship as tracking-pixel style new Image().src assignment beacons
+      // rather than script tags, and those never touch fetch/XHR either.
+      if(window.HTMLImageElement) patchUrlProp(window.HTMLImageElement.prototype,"src");
       var origSetAttribute=Element.prototype.setAttribute;
       Element.prototype.setAttribute=function(name,value){
         var tag=this.tagName;
-        if((tag==="SCRIPT"&&name==="src")||(tag==="LINK"&&name==="href")){
+        if((tag==="SCRIPT"&&name==="src")||(tag==="LINK"&&name==="href")||(tag==="IMG"&&name==="src")){
           if(typeof value==="string"&&sameOrigin(value)&&value.indexOf(RELAY)!==0){
             value=relayUrl(value);
           }
         }
         return origSetAttribute.call(this,name,value);
       };
+      // Best-effort "am I framed?" softening. Many sites gate hydration on
+      // trivial checks like window.top !== window.self or
+      // window.frameElement to detect iframing and deliberately degrade.
+      // This spoofs those specific reads so naive checks report "no, I'm
+      // top-level". It is NOT a bypass of real bot management: sophisticated
+      // systems (Akamai Bot Manager, Cloudflare Bot Management, etc.) also
+      // fingerprint the network request itself — TLS/JA3, header ordering,
+      // behavioral signals, server-side sensor validation — none of which
+      // this, or any client-side trick, can touch. Expect this to close the
+      // common/naive detection gap only, not to defeat enterprise-grade
+      // bot management.
+      try{
+        Object.defineProperty(window,"top",{configurable:true,get:function(){return window.self;}});
+      }catch(e){}
+      try{
+        Object.defineProperty(window,"parent",{configurable:true,get:function(){return window.self;}});
+      }catch(e){}
+      try{
+        Object.defineProperty(window,"frameElement",{configurable:true,get:function(){return null;}});
+      }catch(e){}
     })();</script>`;
     if (/<head[^>]*>/i.test(html)) {
       html = html.replace(/<head([^>]*)>/i, `<head$1>${assetBridge}`);
@@ -195,19 +219,38 @@ export async function GET(request: NextRequest) {
       html = `<head>${assetBridge}</head>${html}`;
     }
 
-    // ES module scripts (<script type="module" src="...">) enforce CORS on
-    // load, same as fetch/XHR — the in-page bridge above can't intercept the
-    // browser's own <script> fetch, so rewrite these src attributes to the
-    // asset relay server-side. Classic (non-module) scripts are exempt from
-    // CORS and load fine directly, so they're left alone.
+    // <script src="..."> tags already present in the STATIC HTML — module
+    // or classic — get rewritten to the asset relay here, server-side,
+    // before the page (and our client-side bridge below) ever runs. This
+    // matters for two different reasons depending on script type:
+    //  - ES module scripts enforce CORS on load, same as fetch/XHR, so a
+    //    direct cross-origin load just fails outright.
+    //  - Classic scripts load fine cross-origin (no CORS gate on <script
+    //    src>), so this isn't about the load itself — it's that these
+    //    scripts almost always go on to make their OWN same-origin fetch/
+    //    XHR calls once they run, and the ONLY thing that can rewrite those
+    //    later calls is the client-side bridge injected above. A script
+    //    that's still sitting at a literal target-origin URL live-tested
+    //    fine on Qantas (a JS-heavy AEM/Franklin + Akamai Bot Manager
+    //    site): the bridge's fetch/XHR/src patches only cover requests
+    //    issued via those APIs, but plenty of real-world bot-management and
+    //    block-loader scripts are themselves the FIRST hop, loaded via a
+    //    plain static <script src> the server-side rewriter used to skip
+    //    entirely for classic scripts. Routing every same-target-origin
+    //    script through the relay up front, regardless of module/classic,
+    //    closes that gap. Third-party origins (CDNs, analytics, etc.) are
+    //    deliberately left untouched — only same-origin-as-target src
+    //    values are rewritten, matching the client-side bridge's own
+    //    same-origin-only policy.
     html = html.replace(
-      /<script\b([^>]*\btype=["']module["'][^>]*)>/gi,
+      /<script\b([^>]*)>/gi,
       (fullTag, attrs: string) => {
         const srcMatch = attrs.match(/\bsrc=["']([^"']+)["']/i);
         if (!srcMatch) return fullTag;
         try {
-          const abs = new URL(srcMatch[1], origin).toString();
-          const relayed = `${proxyOrigin}/api/preview-proxy-asset?url=${encodeURIComponent(abs)}`;
+          const abs = new URL(srcMatch[1], origin);
+          if (abs.origin !== origin) return fullTag; // leave third-party scripts alone
+          const relayed = `${proxyOrigin}/api/preview-proxy-asset?url=${encodeURIComponent(abs.toString())}`;
           return `<script${attrs.replace(srcMatch[0], `src="${relayed}"`)}>`;
         } catch {
           return fullTag;
