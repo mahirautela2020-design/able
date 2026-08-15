@@ -65,8 +65,8 @@ vi.mock("@/lib/supabase/server", () => ({
 
 import { buildReportHtml } from "@/lib/report";
 
-describe("buildReportHtml — evidence images (regression: PDF route resolved signed URLs for a section that never rendered any <img> tags)", () => {
-  it("embeds an <img> for each finding that has a screenshot, using the raw stored path (the PDF route substitutes it for a signed URL afterward)", async () => {
+describe("buildReportHtml — findings + evidence are merged into one section (regression: screenshots lived in a separate 'Evidence' appendix a reader had to cross-reference back to the finding by WCAG number)", () => {
+  it("embeds each finding's screenshot inline in its own Findings entry, using the raw stored path (the PDF route substitutes it for a signed URL afterward)", async () => {
     state.findings = [
       baseFinding,
       { ...baseFinding, id: "f2", rule_title: "Missing accessible name", selector: "#icon-btn", screenshot_crop_url: null },
@@ -74,19 +74,26 @@ describe("buildReportHtml — evidence images (regression: PDF route resolved si
 
     const html = await buildReportHtml("audit-1");
 
-    expect(html).toContain("<h2>Evidence</h2>");
+    expect(html).toContain("<h2>Findings</h2>");
+    expect(html).not.toContain("<h2>Evidence</h2>");
     expect(html).toContain('src="https://storage.example/evidence/audit-1/crop.webp"');
     expect(html).toContain("Insufficient color contrast");
     expect(html).toContain("1.4.3");
+    // The Findings section (which now carries screenshots) must appear
+    // before the Compliance Matrix, not after it.
+    expect(html.indexOf("<h2>Findings</h2>")).toBeLessThan(
+      html.indexOf("<h2>WCAG 2.2 Compliance Matrix</h2>")
+    );
   });
 
-  it("omits the Evidence section entirely when no finding has a screenshot", async () => {
+  it("still lists a finding even when it has no screenshot, with a fallback note instead of an <img>", async () => {
     state.findings = [{ ...baseFinding, screenshot_crop_url: null, full_screenshot_url: null }];
 
     const html = await buildReportHtml("audit-1");
 
-    expect(html).not.toContain("<h2>Evidence</h2>");
-    expect(html).not.toContain('<div class="evidence-entry">');
+    expect(html).toContain("<h2>Findings</h2>");
+    expect(html).toContain("No screenshot captured for this finding.");
+    expect(html).not.toContain("<img");
   });
 
   it("falls back to full_screenshot_url when screenshot_crop_url is absent", async () => {
@@ -97,6 +104,17 @@ describe("buildReportHtml — evidence images (regression: PDF route resolved si
     const html = await buildReportHtml("audit-1");
 
     expect(html).toContain('src="https://storage.example/evidence/audit-1/full.webp"');
+  });
+});
+
+describe("buildReportHtml — WCAG 2.2 Compliance Matrix uses the full 'Success Criterion' header, not the abbreviation", () => {
+  it("labels the SC-number column 'Success Criterion'", async () => {
+    state.findings = [baseFinding];
+
+    const html = await buildReportHtml("audit-1");
+
+    expect(html).toContain("<th>Success Criterion</th>");
+    expect(html).not.toContain("<th>SC</th>");
   });
 });
 
