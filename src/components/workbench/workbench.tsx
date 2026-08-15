@@ -631,6 +631,14 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
                   behavior: "smooth",
                 })
               }
+              onGetPageText={() => {
+                try {
+                  return iframeRef.current?.contentWindow?.document.body?.innerText ?? "";
+                } catch {
+                  // Cross-origin iframe (proxy not same-origin) — nothing we can read.
+                  return "";
+                }
+              }}
             />
           </div>
         )}
