@@ -69,20 +69,21 @@ export async function buildReportHtml(auditId: string): Promise<string> {
 
   const rows: string[] = [];
   for (const sc of matrix.sc) {
-    const statusIcon: Record<string, string> = {
-      "automated-pass": "✅",
-      fail: "❌",
-      "needs-review": "👁️",
-      manual: "🖐️",
-      "not-applicable": "N/A",
+    const statusBadge: Record<string, { label: string; cls: string }> = {
+      "automated-pass": { label: "Pass", cls: "badge-pass" },
+      fail: { label: "Fail", cls: "badge-fail" },
+      "needs-review": { label: "Needs review", cls: "badge-review" },
+      manual: { label: "Manual check", cls: "badge-manual" },
+      "not-applicable": { label: "N/A", cls: "badge-na" },
     };
+    const badge = statusBadge[sc.status];
     rows.push(
       `<tr>
         <td>${sc.id}</td>
         <td>${sc.name}</td>
         <td>${sc.level}</td>
         <td>${sc.principle}</td>
-        <td>${statusIcon[sc.status] || sc.status}</td>
+        <td>${badge ? `<span class="badge ${badge.cls}">${badge.label}</span>` : sc.status}</td>
         <td>${sc.findingsCount}</td>
       </tr>`
     );
@@ -144,6 +145,12 @@ export async function buildReportHtml(auditId: string): Promise<string> {
     .evidence-entry h3 { font-size: 1.1rem; margin-bottom: 0.25rem; }
     .evidence-sc { font-family: monospace; font-weight: 400; color: #666; font-size: 0.85rem; }
     .evidence-img { max-width: 100%; max-height: 480px; object-fit: contain; border: 1px solid #e5e5e5; border-radius: 4px; margin-top: 0.5rem; }
+    .badge { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+    .badge-pass { background: #dcfce7; color: #15803d; }
+    .badge-fail { background: #fee2e2; color: #b91c1c; }
+    .badge-review { background: #fef9c3; color: #a16207; }
+    .badge-manual { background: #e0e7ff; color: #4338ca; }
+    .badge-na { background: #f3f4f6; color: #6b7280; }
   </style>
 </head>
 <body>
