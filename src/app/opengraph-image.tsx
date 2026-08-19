@@ -41,12 +41,21 @@ export default async function Image() {
               height: 72,
               borderRadius: 20,
               backgroundColor: ACCENT,
-              fontSize: 40,
-              fontWeight: 700,
-              color: BG,
             }}
           >
-            ✓
+            {/* Inline SVG, not a "✓" glyph -- Satori has no bundled font
+                covering that character and silently renders a tofu box
+                (missing-glyph outline) instead of fetching one at build
+                time; a path has no font dependency at all. */}
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M5 13l4 4L19 7"
+                stroke={BG}
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </div>
           <div style={{ display: "flex", fontSize: 64, fontWeight: 700, letterSpacing: -1 }}>
             ScanA11y
