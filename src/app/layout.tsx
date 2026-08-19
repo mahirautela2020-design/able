@@ -13,9 +13,24 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://scana11y-nine.vercel.app";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "ScanA11y — Accessibility Auditor",
   description: "WCAG 2.2 accessibility auditor. URL auditing, compliance matrix, evidence-first findings.",
+  openGraph: {
+    title: "ScanA11y — Accessibility Auditor",
+    description: "WCAG 2.2 accessibility auditor. URL auditing, compliance matrix, evidence-first findings.",
+    url: SITE_URL,
+    siteName: "ScanA11y",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ScanA11y — Accessibility Auditor",
+    description: "WCAG 2.2 accessibility auditor. URL auditing, compliance matrix, evidence-first findings.",
+  },
 };
 
 export default function RootLayout({
