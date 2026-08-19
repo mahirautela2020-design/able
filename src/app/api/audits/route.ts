@@ -72,6 +72,13 @@ export async function POST(request: Request) {
       data: moduleIds ? { auditId, url, modules: moduleIds } : { auditId, url },
     });
 
+    // Best-effort fast preview (Lighthouse via Google PSI) -- independent
+    // event/function, never blocks or is blocked by the real audit above.
+    await inngest.send({
+      name: "audit/psi-preview",
+      data: { auditId, url },
+    });
+
     return Response.json({ id: auditId }, { status: 201 });
   } catch (e) {
     console.error("POST /api/audits error:", e);
