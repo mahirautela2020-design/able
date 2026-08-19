@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { FastPreview } from "@/lib/psi";
 
 let _supabase: SupabaseClient | null = null;
 
@@ -97,7 +98,7 @@ export async function getAudit(auditId: string) {
   const { data, error } = await supabase
     .from("audits")
     .select(
-      "id, target_url, status, config, progress, report_path, error_code, error_detail, created_at, completed_at, created_by, created_ip"
+      "id, target_url, status, config, progress, fast_preview, report_path, error_code, error_detail, created_at, completed_at, created_by, created_ip"
     )
     .eq("id", auditId)
     .single();
@@ -126,6 +127,21 @@ export async function updateAuditProgress(
   const { error } = await supabase
     .from("audits")
     .update({ progress })
+    .eq("id", auditId);
+
+  if (error) throw error;
+}
+
+/** Separate column from `progress` (see 0005_fast_preview.sql) -- the PSI
+ * preview function runs concurrently with the main audit-url pipeline, and
+ * `progress` writes are a full-column replace, so sharing it would race. */
+export async function updateAuditFastPreview(
+  auditId: string,
+  fastPreview: FastPreview
+) {
+  const { error } = await supabase
+    .from("audits")
+    .update({ fast_preview: fastPreview })
     .eq("id", auditId);
 
   if (error) throw error;

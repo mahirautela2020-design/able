@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getWcagRegistry, type WcagSuccessCriterion } from "@/engine/wcag-registry";
 import { supabase, authHeaders } from "@/lib/supabase/client";
+import type { FastPreview } from "@/lib/psi";
 import { ScreenReaderPanel } from "@/components/workbench/explore/screen-reader-panel";
 import { PreviewPane } from "@/components/workbench/preview-pane";
 import { InspectRail } from "@/components/workbench/explore/inspect-rail";
@@ -105,6 +106,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   const [status, setStatus] = useState(auditStatus);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [progress, setProgress] = useState<Record<string, unknown> | null>(null);
+  const [fastPreview, setFastPreview] = useState<FastPreview | null>(null);
   const [stopping, setStopping] = useState(false);
 
   // Draggable left-column width (like Claude's split-pane resize). Persisted
@@ -164,6 +166,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
         setStatus(json.audit?.status ?? status);
         setErrorCode(json.audit?.error_code ?? null);
         setProgress(json.audit?.progress ?? null);
+        setFastPreview(json.audit?.fast_preview ?? null);
         if (Array.isArray(json.findings)) setLiveFindings(json.findings);
       } catch {
         // transient — keep polling
@@ -557,6 +560,54 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
             </p>
           )}
         </div>
+
+        {/* Fast preview (Google PSI/Lighthouse) -- shown only while the full
+            axe+Playwright audit is still queued/running, since it's a
+            same-engine subset of what the real results below will show. */}
+        {(status === "running" || status === "queued") &&
+          fastPreview &&
+          !fastPreview.error &&
+          (fastPreview.screenshot || typeof fastPreview.score === "number") && (
+            <div className="p-3 border-b bg-background/50 space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold">Fast preview</h3>
+                {typeof fastPreview.score === "number" && (
+                  <span
+                    className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${
+                      fastPreview.score >= 90
+                        ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400"
+                        : fastPreview.score >= 50
+                          ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-400"
+                          : "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                    }`}
+                  >
+                    {fastPreview.score}/100
+                  </span>
+                )}
+              </div>
+              {fastPreview.screenshot && (
+                // eslint-disable-next-line @next/next/no-img-element -- data: URI, Image optimizer doesn't apply
+                <img
+                  src={fastPreview.screenshot}
+                  alt="Quick preview screenshot of the target page"
+                  className="w-full rounded border"
+                />
+              )}
+              {fastPreview.issues.length > 0 && (
+                <ul className="text-[11px] text-muted-foreground space-y-0.5 list-disc list-inside">
+                  {fastPreview.issues.slice(0, 4).map((iss) => (
+                    <li key={iss.id} className="truncate">
+                      {iss.title}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-[10px] text-muted-foreground/70">
+                Quick preview via Google PageSpeed Insights — the full scan
+                below checks more (keyboard, screen reader, responsive).
+              </p>
+            </div>
+          )}
 
         {/* Tab nav — each tab renders its content in THIS left column; the
             right column always shows the shared live preview. */}

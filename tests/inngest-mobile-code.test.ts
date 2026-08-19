@@ -1,4 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// Importing "@/inngest/functions" now transitively pulls in psi-preview.ts
+// -> src/lib/psi.ts, which has a top-level `import "server-only"` -- that
+// package throws unconditionally outside Next's own bundler, so it must be
+// mocked in any test that imports the functions barrel (see also
+// tests/vision-ui-screenshot-gate.test.ts for the same pattern).
+vi.mock("server-only", () => ({}));
 
 describe("inngest-mobile-code", () => {
   it("process-mobile function exists and is registered", async () => {
