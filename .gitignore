@@ -49,3 +49,24 @@ build-logs/
 supabase/.temp/
 qa-token.txt
 vercel-token.txt
+
+# Internal build/planning docs — kept locally, not published on the fork
+AGENTS/
+AUTOPILOT.md
+BUILD_EVERYTHING.md
+DEPLOYMENT_GUIDE.md
+ENTERPRISE_SPEC.md
+HANDOFF.md
+ORCHESTRATOR.md
+P0_BUILD_PROMPT.md
+P7_NVDA_SPEC.md
+P8_VISION_DETECTION_SPEC.md
+P9_APK_DYNAMIC_SPEC.md
+P10_IOS_SPEC.md
+P11_SR_ENGINE_SPEC.md
+P12_CONTRAST_LAB_SPEC.md
+PRODUCT_BLUEPRINT.md
+REVERSE_ENGINEERING.md
+WORKBENCH_VISION.md
+accessibility-auditor-oss-reference.md
+docs/phase-reports/
