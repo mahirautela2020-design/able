@@ -28,8 +28,23 @@ const MAX_PAGES = parseInt(process.env.MAX_PAGES || "5", 10);
 
 /** Hard cap per page-scan step — a single pathological page must not stall
  * the whole audit forever (koa.com hung 200s+ on one page). On timeout the
- * page is marked failed and the audit continues with the next page. */
-const PAGE_SCAN_TIMEOUT_MS = 90_000;
+ * page is marked failed and the audit continues with the next page.
+ *
+ * MUST stay comfortably under the `/api/inngest` route's `maxDuration` (60s,
+ * see src/app/api/inngest/route.ts) — Vercel kills the function at that wall
+ * clock regardless of what our own watchdog is set to, and an uncaught
+ * platform kill never runs our timeout-handling code, so the audit is left
+ * stuck at status="running" forever with no failed page row and no ability
+ * for onFailure/cancel to recover it. Leaves ~15s headroom for Supabase
+ * writes, sharp image processing, and response serialization after the
+ * scan itself returns. */
+const PAGE_SCAN_TIMEOUT_MS = 45_000;
+
+/** Same reasoning as PAGE_SCAN_TIMEOUT_MS — the crawl step (page discovery)
+ * previously had no deadline at all, so a slow/JS-heavy seed page could hang
+ * the "crawl" step past the platform's maxDuration with the same silent-
+ * stuck-forever failure mode. */
+const CRAWL_TIMEOUT_MS = 45_000;
 
 /** Race a promise against a deadline; on expiry resolves with "TIMEOUT". */
 async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T | "TIMEOUT"> {
@@ -84,8 +99,11 @@ export const auditUrl = inngest.createFunction(
 
     await step.run("crawl", async () => {
       await updateAuditStatus(auditId, "running");
-      const pages = await crawl(url, MAX_PAGES);
-      return { pages };
+      const outcome = await withDeadline(crawl(url, MAX_PAGES), CRAWL_TIMEOUT_MS);
+      if (outcome === "TIMEOUT") {
+        throw new Error(`CRAWL_TIMEOUT: page discovery exceeded ${CRAWL_TIMEOUT_MS}ms`);
+      }
+      return { pages: outcome };
     });
 
     const pagesStep = (await step.run("get-pages", async () => {

@@ -14,6 +14,24 @@ import "server-only";
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
+/**
+ * Free, vision-capable OpenRouter models, ordered as a fallback chain.
+ * OpenRouter's own routing tries these in order within a single request
+ * (via the `models` field) — if the first is rate-limited/down, it
+ * transparently retries the next before giving up. Picked from the live
+ * OpenRouter catalog (https://openrouter.ai/api/v1/models) for: vision
+ * input support, `:free` pricing (no paid account needed), and structured
+ * JSON output where available (this app's prompt requires strict JSON).
+ * Re-check that catalog periodically — OpenRouter rotates free models.
+ * Capped at 3: OpenRouter rejects a `models` fallback array longer than
+ * that ("'models' array must have 3 items or fewer").
+ */
+const OPENROUTER_FREE_VISION_MODELS = [
+  "google/gemma-4-26b-a4b-it:free", // MoE, fast, supports response_format json
+  "nvidia/nemotron-nano-12b-v2-vl:free", // vision-language specialist, strong at reading UI text/labels
+  "dots-studio/dots-3-note-preview:free", // large MoE, supports response_format json
+];
+
 export interface VisionSuggestion {
   /** WCAG criterion the model suspects (e.g. "1.1.1", "1.4.3") */
   wcagCriterion: string;
@@ -38,16 +56,21 @@ export interface VisionResult {
 
 function getConfig() {
   const provider = process.env.VISION_PROVIDER || "gemini";
-  const model = process.env.VISION_MODEL || "gemini-2.5-flash";
+  const model =
+    provider === "openrouter"
+      ? OPENROUTER_FREE_VISION_MODELS[0]
+      : process.env.VISION_MODEL || "gemini-2.5-flash";
 
   // Each provider uses ITS OWN key — never cross-send keys between
   // endpoints (Gemini key to opencode zen → 401, and vice versa).
   const apiKey =
     provider === "opencode"
       ? process.env.OPENCODE_GO_API_KEY ?? null
-      : process.env.GEMINI_API_KEY ??
-        process.env.GOOGLE_GENERATIVE_AI_API_KEY ??
-        null;
+      : provider === "openrouter"
+        ? process.env.OPENROUTER_API_KEY ?? null
+        : process.env.GEMINI_API_KEY ??
+          process.env.GOOGLE_GENERATIVE_AI_API_KEY ??
+          null;
 
   return { apiKey, model, provider };
 }
@@ -104,7 +127,8 @@ export async function analyzeScreenshot(
       model,
       suggestions: [],
       rawText: null,
-      error: "No vision API key configured (GEMINI_API_KEY / OPENCODE_GO_API_KEY)",
+      error:
+        "No vision API key configured (OPENROUTER_API_KEY / GEMINI_API_KEY / OPENCODE_GO_API_KEY)",
       isUiScreenshot: null,
       screenshotReason: null,
     };
@@ -115,7 +139,9 @@ export async function analyzeScreenshot(
     const text =
       provider === "opencode"
         ? await callOpenCodeVision(apiKey, model, b64, mimeType)
-        : await callGeminiVision(apiKey, model, b64, mimeType);
+        : provider === "openrouter"
+          ? await callOpenRouterVision(apiKey, b64, mimeType)
+          : await callGeminiVision(apiKey, model, b64, mimeType);
 
     const { isUiScreenshot, reason, suggestions } = parseVisionResponse(text);
     return {
@@ -223,6 +249,58 @@ async function callOpenCodeVision(
   };
   const msg = data.choices?.[0]?.message;
   return msg?.content ?? msg?.reasoning ?? "";
+}
+
+/** OpenRouter: OpenAI-compatible chat completions, free-tier model fallback
+ * chain. Passing `models` (in addition to `model`) lets OpenRouter itself
+ * retry the next free model in the list within this one request if the
+ * first is rate-limited or temporarily unavailable — free models have no
+ * uptime SLA, so this is load-bearing, not decoration. */
+async function callOpenRouterVision(
+  apiKey: string,
+  b64: string,
+  mimeType: string
+): Promise<string> {
+  const body = JSON.stringify({
+    model: OPENROUTER_FREE_VISION_MODELS[0],
+    models: OPENROUTER_FREE_VISION_MODELS,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: PROMPT },
+          {
+            type: "image_url",
+            image_url: { url: `data:${mimeType};base64,${b64}` },
+          },
+        ],
+      },
+    ],
+    max_tokens: 4096,
+  });
+
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      // OpenRouter uses these for free-tier rate-limit attribution, not auth.
+      "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "https://scana11y-nine.vercel.app",
+      "X-Title": "ScanA11y",
+    },
+    body,
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!res.ok) {
+    throw new Error(`OpenRouter vision API error ${res.status}`);
+  }
+
+  const data = (await res.json()) as {
+    choices?: { message?: { content?: string | null } }[];
+  };
+  return data.choices?.[0]?.message?.content ?? "";
 }
 
 function toSuggestions(raw: unknown): VisionSuggestion[] {
