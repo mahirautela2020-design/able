@@ -1,0 +1,19 @@
+Add OpenRouter vision provider (free-model fallback); fix audit-stuck-running timeout mismatch
+
+vision.ts: new "openrouter" provider using OpenAI-compatible chat
+completions, with a curated 3-model free fallback chain (OpenRouter caps
+the models array at 3) picked from the live catalog for vision support
+plus structured JSON output: google/gemma-4-26b-a4b-it, nvidia/nemotron-
+nano-12b-v2-vl, dots-studio/dots-3-note-preview. Opencode zen and Gemini
+remain available via VISION_PROVIDER for manual fallback if needed.
+
+audit-url.ts: PAGE_SCAN_TIMEOUT_MS (90s) exceeded the /api/inngest
+route's maxDuration (60s) - Vercel kills the function before the app's
+own watchdog ever fires, silently orphaning the run at status=running
+forever with no failed-page row and no chance for onFailure/cancel to
+recover it. Lowered to 45s and added the same bounded deadline to the
+previously-unbounded crawl step, so a slow/hung page now fails cleanly
+within the platform's window instead of wedging the run (and, via
+concurrency:1, every audit queued behind it).
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
