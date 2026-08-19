@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { FastPreview } from "@/lib/psi";
 
 let _supabase: SupabaseClient | null = null;
 
@@ -136,7 +137,7 @@ export async function updateAuditProgress(
  * `progress` writes are a full-column replace, so sharing it would race. */
 export async function updateAuditFastPreview(
   auditId: string,
-  fastPreview: Record<string, unknown>
+  fastPreview: FastPreview
 ) {
   const { error } = await supabase
     .from("audits")
