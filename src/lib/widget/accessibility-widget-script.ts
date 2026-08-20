@@ -92,12 +92,12 @@ export const ACCESSIBILITY_WIDGET_SCRIPT = `
     }
 
     if (filterParts.length > 0) {
-      document.documentElement.style.filter = filterParts.join(" ");
+      document.body.style.filter = filterParts.join(" ");
       if (settings.contrast === "dark") {
         css.push("img,video,picture{filter:invert(1) hue-rotate(180deg)!important}");
       }
     } else {
-      document.documentElement.style.filter = "";
+      document.body.style.filter = "";
     }
 
     if (settings.textScale && settings.textScale !== 100) {
@@ -309,7 +309,11 @@ export const ACCESSIBILITY_WIDGET_SCRIPT = `
   host.style.cssText = "all:initial;position:fixed;z-index:2147483647;" +
     (POSITION.indexOf("bottom") !== -1 ? "bottom:16px;" : "top:16px;") +
     (POSITION.indexOf("left") !== -1 ? "left:16px;" : "right:16px;");
-  document.body.appendChild(host);
+  // Appended to <html> (a sibling of <body>), not <body> itself -- the
+  // profile filter (contrast/dark/invert) above is applied to document.body
+  // specifically so the widget's own UI structurally escapes it instead of
+  // being visually distorted by its own contrast/invert effects.
+  document.documentElement.appendChild(host);
 
   var root = host.attachShadow ? host.attachShadow({ mode: "open" }) : host;
 

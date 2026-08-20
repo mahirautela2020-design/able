@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fake third-party site — widget embed test</title>
+<style>
+  body { font-family: Georgia, serif; margin: 0; padding: 40px; background: #fdfdfd; color: #222; }
+  h1 { font-size: 28px; }
+  a { color: #0645ad; }
+  img { max-width: 200px; }
+</style>
+</head>
+<body>
+  <h1>Acme Community Blog</h1>
+  <p>This is a fake third-party site used only to verify the ScanA11y embeddable widget works when dropped into someone else's page via a single script tag.</p>
+  <p>Here is a <a href="#">link to something</a> and another <a href="#">link over here</a>.</p>
+  <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='120'%3E%3Crect width='200' height='120' fill='%23ccc'/%3E%3C/svg%3E" alt="Placeholder">
+  <button title="Does a thing" aria-label="Do a thing">Click me</button>
+
+  <script src="/widget.js" async data-position="bottom-right" data-accent="#2563eb"></script>
+</body>
+</html>
