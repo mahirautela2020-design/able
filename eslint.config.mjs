@@ -12,9 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Standalone Chrome extension -- vanilla JS, ships its own vendored
-    // axe-core/widget copies, not part of the Next.js app's TS/React rules.
-    "chrome-extension/**",
+    // Standalone Chrome extension -- built output and vendored third-party
+    // code (axe.min.js), not something to lint. chrome-extension/src/**
+    // (real TS/React, built via Vite) IS linted with the same rules.
+    "chrome-extension/dist/**",
+    "chrome-extension/vendor/**",
   ]),
 ]);
 
