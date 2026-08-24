@@ -48,12 +48,22 @@ interface PluginMessage {
   [key: string]: unknown;
 }
 
+function highlightNode(nodeId: string): boolean {
+  const node = lastAuditedNodes.get(nodeId);
+  if (!node) return false;
+  figma.currentPage.selection = [node];
+  figma.viewport.scrollAndZoomIntoView([node]);
+  return true;
+}
+
 async function handle(msg: PluginMessage): Promise<unknown> {
   switch (msg.type) {
     case "get-selection-count":
       return figma.currentPage.selection.length;
     case "run-audit":
       return runAudit(msg.scope as "selection" | "page");
+    case "highlight-node":
+      return highlightNode(msg.nodeId as string);
     default:
       throw new Error(`Unknown message type: ${msg.type}`);
   }
