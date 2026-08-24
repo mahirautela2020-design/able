@@ -89,7 +89,7 @@ function buildPrintHtml(
   wcagScore: number,
   automatablePassed: number,
   totalAutomatable: number,
-  shots: { finding: Finding; dataUrl: string | null }[]
+  shots: { finding: Finding; dataUrl: string | null; error: string | null }[]
 ): string {
   const pageCss = `
     @page { size: 1280px 720px; margin: 0; }
@@ -128,8 +128,11 @@ function buildPrintHtml(
   `;
 
   const pages = shots
-    .map(({ finding, dataUrl }) => {
+    .map(({ finding, dataUrl, error }) => {
       const helpUrl = typeof finding.evidence.helpUrl === "string" ? finding.evidence.helpUrl : null;
+      const placeholder = error
+        ? `Screenshot failed: ${escapeHtml(error)}`
+        : "Screenshot unavailable for this element";
       return `
       <div class="page">
         <h2>${escapeHtml(finding.rule_title)}</h2>
@@ -140,7 +143,7 @@ function buildPrintHtml(
         <p class="selector">${escapeHtml(finding.selector)}</p>
         <div class="body-row">
           <div class="shot-wrap">
-            ${dataUrl ? `<img class="shot" src="${dataUrl}" />` : `<span class="no-shot">Screenshot unavailable for this element</span>`}
+            ${dataUrl ? `<img class="shot" src="${dataUrl}" />` : `<span class="no-shot">${placeholder}</span>`}
           </div>
           <div class="fix">
             <h3>How to fix</h3>
@@ -263,7 +266,7 @@ export function AuditTab() {
       const url = tab?.url ?? "";
 
       const withSelector = findings.filter((f) => f.selector).slice(0, 20);
-      const shots: { finding: Finding; dataUrl: string | null }[] = [];
+      const shots: { finding: Finding; dataUrl: string | null; error: string | null }[] = [];
       for (const finding of withSelector) {
         const hl = await callTab<{ ok: boolean; rect: { x: number; y: number; width: number; height: number } | null; devicePixelRatio: number }>(
           "highlight",
@@ -271,15 +274,28 @@ export function AuditTab() {
         ).catch(() => null);
         await new Promise((r) => setTimeout(r, 250)); // let scroll/paint settle
         // >=550ms between captureVisibleTab calls to stay under Chrome's
-        // ~2/sec quota -- the earlier 220ms-only version silently hit that
+        // ~2/sec quota -- an earlier 220ms-only version silently hit that
         // quota on nearly every call, which is why screenshots kept coming
         // back empty.
-        const raw = await captureVisibleTabWithRetry();
+        const { dataUrl: raw, error: captureError } = await captureVisibleTabWithRetry();
         const dataUrl = raw && hl?.rect ? await cropToElement(raw, hl.rect, hl.devicePixelRatio || 1) : raw;
-        shots.push({ finding, dataUrl });
+        shots.push({ finding, dataUrl, error: captureError });
         await new Promise((r) => setTimeout(r, 300));
       }
       await callTab("clear-highlight").catch(() => {});
+
+      const failedCount = shots.filter((s) => !s.dataUrl).length;
+      if (failedCount === shots.length && shots.length > 0) {
+        // Every single capture failed the same way -- surface the real
+        // reason here too, not just buried on a PDF page the user has to
+        // scroll through to find.
+        const firstError = shots.find((s) => s.error)?.error;
+        setError(
+          firstError
+            ? `All ${shots.length} screenshots failed: ${firstError}`
+            : `All ${shots.length} screenshots came back empty for an unknown reason.`
+        );
+      }
 
       const html = buildPrintHtml(url, matrix.wcagScore, matrix.automatablePassed, matrix.totalAutomatable, shots);
       const win = window.open("", "_blank", "width=1280,height=800");
