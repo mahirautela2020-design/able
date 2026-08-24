@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/accordion";
 import { extractFindings, type AxeResult, type Finding } from "@/engine/finding-mapping";
 import { computeComplianceMatrix, type WcagScoreEntry } from "@/engine/normalize";
-import { runAxeOnTab, callTab } from "../lib/tab-bridge";
+import { runAxeOnTab, callTab, captureVisibleTab } from "../lib/tab-bridge";
 
 const PRINCIPLES = ["Perceivable", "Operable", "Understandable", "Robust"] as const;
 
@@ -29,6 +29,79 @@ function statusVariant(status: WcagScoreEntry["status"]): "default" | "destructi
   return "outline";
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Builds a print-ready HTML document: one 16:9 (1280x720 CSS px) page per
+ * finding with its evidence screenshot, plus a cover page with the score
+ * summary -- the same shape as the website's PDF export, generated
+ * entirely client-side via the browser's native print-to-PDF instead of a
+ * server route. Extension audits never touch Supabase/Playwright (no
+ * login, nothing stored), so there's no audit id to hand the website's
+ * server-side /api/audits/[id]/pdf route -- this reconstructs the same
+ * "evidence per violation, 16:9" idea without one. */
+function buildPrintHtml(
+  url: string,
+  wcagScore: number,
+  automatablePassed: number,
+  totalAutomatable: number,
+  shots: { finding: Finding; dataUrl: string | null }[]
+): string {
+  const pageCss = `
+    @page { size: 1280px 720px; margin: 0; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; color: #1a1a1a; }
+    .page { width: 1280px; height: 720px; padding: 48px; page-break-after: always; display: flex; flex-direction: column; }
+    .page:last-child { page-break-after: auto; }
+    h1 { font-size: 28px; margin: 0 0 8px; }
+    h2 { font-size: 20px; margin: 0 0 12px; }
+    .muted { color: #666; }
+    .score { font-size: 56px; font-weight: 700; margin: 24px 0; }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .badge.critical, .badge.serious { background: #fee2e2; color: #991b1b; }
+    .badge.moderate { background: #fef3c7; color: #92400e; }
+    .badge.minor { background: #e5e7eb; color: #374151; }
+    .selector { font-family: monospace; font-size: 13px; color: #555; margin: 4px 0 12px; }
+    .shot-wrap { flex: 1; display: flex; align-items: center; justify-content: center; border: 1px solid #e5e5e5; border-radius: 8px; overflow: hidden; background: #fafafa; }
+    img.shot { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .no-shot { color: #999; font-size: 14px; }
+    footer { margin-top: 12px; font-size: 11px; color: #999; }
+  `;
+
+  const cover = `
+    <div class="page">
+      <h1>ScanA11y accessibility report</h1>
+      <p class="muted">${escapeHtml(url)}</p>
+      <div class="score">${wcagScore}% WCAG score</div>
+      <p class="muted">${automatablePassed} of ${totalAutomatable} automatable criteria passing · ${shots.length} findings with evidence</p>
+      <footer>Generated client-side by the ScanA11y Chrome extension — axe-core + a live keyboard walkthrough, run directly in this tab. No account, nothing stored.</footer>
+    </div>
+  `;
+
+  const pages = shots
+    .map(({ finding, dataUrl }) => `
+      <div class="page">
+        <h2>${escapeHtml(finding.rule_title)}</h2>
+        <p>
+          <span class="badge ${finding.severity}">${escapeHtml(finding.severity)}</span>
+          &nbsp; WCAG ${finding.wcag_criteria.join(", ")} (${finding.wcag_level})
+        </p>
+        <p class="selector">${escapeHtml(finding.selector)}</p>
+        <div class="shot-wrap">
+          ${dataUrl ? `<img class="shot" src="${dataUrl}" />` : `<span class="no-shot">Screenshot unavailable for this element</span>`}
+        </div>
+      </div>
+    `)
+    .join("");
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>ScanA11y report</title><style>${pageCss}</style></head><body>${cover}${pages}</body></html>`;
+}
+
 /**
  * Real WCAG compliance-matrix presentation (same extractFindings +
  * computeComplianceMatrix + wcag-registry the web app's workbench uses),
@@ -43,6 +116,7 @@ export function AuditTab() {
   const [findings, setFindings] = useState<Finding[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const runAudit = useCallback(async () => {
     setLoading(true);
@@ -126,6 +200,43 @@ export function AuditTab() {
     [findingsBySc]
   );
 
+  const downloadPdf = useCallback(async () => {
+    if (!findings || !matrix) return;
+    setPdfBusy(true);
+    setError(null);
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const url = tab?.url ?? "";
+
+      const withSelector = findings.filter((f) => f.selector).slice(0, 20);
+      const shots: { finding: Finding; dataUrl: string | null }[] = [];
+      for (const finding of withSelector) {
+        await callTab("highlight", { selector: finding.selector }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 220)); // let scroll/paint settle
+        const dataUrl = await captureVisibleTab().catch(() => null);
+        shots.push({ finding, dataUrl });
+      }
+      await callTab("clear-highlight").catch(() => {});
+
+      const html = buildPrintHtml(url, matrix.wcagScore, matrix.automatablePassed, matrix.totalAutomatable, shots);
+      const win = window.open("", "_blank", "width=1280,height=800");
+      if (!win) {
+        setError("Pop-up blocked — allow pop-ups for this extension to download the PDF.");
+        return;
+      }
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      // Let images decode before invoking the browser's print-to-PDF dialog.
+      setTimeout(() => win.print(), 400);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPdfBusy(false);
+    }
+  }, [findings, matrix]);
+
   return (
     <div className="space-y-3">
       <Button onClick={runAudit} disabled={loading} className="w-full">
@@ -140,10 +251,16 @@ export function AuditTab() {
       {matrix && (
         <>
           <Card>
-            <CardContent className="pt-4 text-xs space-y-1">
+            <CardContent className="pt-4 text-xs space-y-2">
               <p className="font-semibold text-sm">{matrix.wcagScore}% WCAG score</p>
               <p className="text-muted-foreground">
                 {matrix.automatablePassed} of {matrix.totalAutomatable} automatable criteria passing · {findings?.length ?? 0} findings
+              </p>
+              <Button size="sm" variant="outline" className="w-full" onClick={downloadPdf} disabled={pdfBusy}>
+                {pdfBusy ? "Capturing evidence…" : "Download PDF report (16:9)"}
+              </Button>
+              <p className="text-[10px] text-muted-foreground">
+                Opens the browser&apos;s print dialog with the report — choose &quot;Save as PDF&quot; as the destination.
               </p>
             </CardContent>
           </Card>

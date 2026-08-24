@@ -24,3 +24,11 @@ export interface ContrastPairSample {
   selector: string;
   label: string;
 }
+
+export interface OutlineNode {
+  kind: "heading" | "landmark";
+  level: number | null;
+  role: string;
+  label: string;
+  selector: string;
+}
