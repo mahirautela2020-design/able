@@ -13,6 +13,13 @@ import path from "path";
 // design system and WCAG-mapping logic, not a re-implementation.
 export default defineConfig({
   root: path.resolve(__dirname, "src/sidepanel"),
+  // Vite defaults to absolute asset paths ("/assets/..."), which resolve
+  // against the ORIGIN root. A Chrome extension's origin root is the
+  // extension folder itself, not chrome-extension/dist/ -- so an absolute
+  // path 404s (missing the "dist/" prefix) and the side panel loads blank.
+  // Relative paths resolve against index.html's own location instead,
+  // which is correct regardless of where in the extension dist/ sits.
+  base: "./",
   // Without this Vite walks up from `root` looking for a `public/` dir and
   // finds the main Next.js app's (its own root is a sibling directory) --
   // copying unrelated demo/test HTML and default SVGs into the extension.
