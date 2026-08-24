@@ -48,7 +48,7 @@ Web Store review — while developing, load it as an "unpacked" extension:
   — the side panel is a separate execution context from the page, not an
   iframe).
 
-  Requests `http://*/*` and `https://*/*` host permissions (in addition to
+  Requests the `<all_urls>` host permission (in addition to
   `activeTab`/`scripting`) — `activeTab` alone isn't reliable here: a side
   panel stays open across tab switches and navigation (unlike a popup,
   which re-grants `activeTab` on every open), so by the time you click a
@@ -59,6 +59,14 @@ Web Store review — while developing, load it as an "unpacked" extension:
   scripting-based extensions (axe DevTools, WAVE, etc.) make for the same
   reason — nothing is injected or read until you explicitly trigger an
   action from the panel.
+
+  Note this must be the literal `<all_urls>` match pattern, not an
+  equivalent-looking set of scheme wildcards (`http://*/*` +
+  `https://*/*`) — `chrome.tabs.captureVisibleTab()` (used for the PDF
+  report's per-finding screenshots) checks specifically for `<all_urls>`
+  or `activeTab`, and rejects a page it can otherwise script/message with
+  `"Either the '<all_urls>' or 'activeTab' permission is required."` if
+  only the scheme-wildcard form is present.
 - **Background** (`src/background.ts`) — MV3 service worker; its only job
   is `chrome.sidePanel.setPanelBehavior({openPanelOnActionClick: true})`.
 
