@@ -1,4 +1,5 @@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { AuditTab } from "./tabs/AuditTab";
 import { InspectTab } from "./tabs/InspectTab";
 import { AccessibilityTab } from "./tabs/AccessibilityTab";
@@ -30,13 +31,19 @@ export function App() {
         </TabsList>
 
         <TabsContent value="audit" className="flex-1 min-h-0 overflow-y-auto">
-          <AuditTab />
+          <ErrorBoundary>
+            <AuditTab />
+          </ErrorBoundary>
         </TabsContent>
         <TabsContent value="inspect" className="flex-1 min-h-0 overflow-y-auto">
-          <InspectTab />
+          <ErrorBoundary>
+            <InspectTab />
+          </ErrorBoundary>
         </TabsContent>
         <TabsContent value="a11y" className="flex-1 min-h-0 overflow-y-auto">
-          <AccessibilityTab />
+          <ErrorBoundary>
+            <AccessibilityTab />
+          </ErrorBoundary>
         </TabsContent>
       </Tabs>
     </div>
