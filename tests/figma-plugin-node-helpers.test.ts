@@ -42,6 +42,14 @@ describe("resolveFillColor", () => {
     expect(resolveFillColor(fills)).toBe("#00ff00");
   });
 
+  it("returns the topmost (last) visible SOLID fill in a multi-fill stack", () => {
+    const bottomColor = { type: "SOLID", visible: true, color: { r: 1, g: 0, b: 0 } };
+    const topColor = { type: "SOLID", visible: true, color: { r: 0, g: 0, b: 1 } };
+    const fills = [bottomColor, topColor];
+    expect(resolveFillColor(fills)).toBe(figmaColorToHex(topColor.color));
+    expect(resolveFillColor(fills)).not.toBe(figmaColorToHex(bottomColor.color));
+  });
+
   it("returns null for mixed fills (a Symbol)", () => {
     expect(resolveFillColor(Symbol("mixed"))).toBeNull();
   });
@@ -74,18 +82,18 @@ describe("resolveBackgroundColor", () => {
 });
 
 describe("isLargeText", () => {
-  it("treats 18px+ as large regardless of weight", () => {
-    expect(isLargeText(18, 400)).toBe(true);
+  it("treats 24px+ as large regardless of weight", () => {
     expect(isLargeText(24, 400)).toBe(true);
+    expect(isLargeText(32, 400)).toBe(true);
   });
 
-  it("treats 14px+ bold as large", () => {
-    expect(isLargeText(14, 700)).toBe(true);
-    expect(isLargeText(14, 400)).toBe(false);
+  it("treats 18.66px+ bold as large", () => {
+    expect(isLargeText(18.66, 700)).toBe(true);
+    expect(isLargeText(18.66, 400)).toBe(false);
   });
 
   it("treats anything smaller as not large", () => {
-    expect(isLargeText(13, 700)).toBe(false);
+    expect(isLargeText(18, 700)).toBe(false);
   });
 
   it("returns false when fontSize is mixed (a Symbol)", () => {
