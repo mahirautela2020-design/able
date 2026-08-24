@@ -161,10 +161,15 @@ if (!(window as unknown as { __ableExtLoaded?: boolean }).__ableExtLoaded) {
     highlightEl?.remove();
     highlightEl = null;
   }
-  function highlight(selector: string): boolean {
+  interface HighlightResult {
+    ok: boolean;
+    rect: { x: number; y: number; width: number; height: number } | null;
+    devicePixelRatio: number;
+  }
+  function highlight(selector: string): HighlightResult {
     clearHighlight();
     const el = document.querySelector(selector);
-    if (!el) return false;
+    if (!el) return { ok: false, rect: null, devicePixelRatio: window.devicePixelRatio || 1 };
     // Scroll with behavior:"auto" (not "smooth") BEFORE reading the rect --
     // an instant scroll reflows synchronously, so the very next
     // getBoundingClientRect() call already reflects the post-scroll layout.
@@ -179,7 +184,13 @@ if (!(window as unknown as { __ableExtLoaded?: boolean }).__ableExtLoaded) {
       "left:" + rect.left + "px;top:" + rect.top + "px;width:" + rect.width + "px;height:" + rect.height + "px;";
     document.body.appendChild(overlay);
     highlightEl = overlay;
-    return true;
+    return {
+      ok: true,
+      // Excludes the overlay's own 2px border/padding so the PDF's cropped
+      // evidence shot is anchored to the real element box, not the marker.
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      devicePixelRatio: window.devicePixelRatio || 1,
+    };
   }
   function focusEl(selector: string): boolean {
     const el = document.querySelector(selector) as HTMLElement | null;

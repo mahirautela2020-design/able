@@ -74,3 +74,24 @@ export async function captureVisibleTab(): Promise<string> {
   if (tab.windowId === undefined) throw new Error("No active window");
   return chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
 }
+
+/** Chrome hard-limits captureVisibleTab to ~2 calls/second per profile
+ * (MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND) -- calling it in a tight loop
+ * (one per finding, for the PDF report's evidence shots) throws a quota
+ * error well before that. Retries with backoff on that specific error;
+ * anything else fails immediately since retrying won't help. */
+export async function captureVisibleTabWithRetry(retries = 4): Promise<string | null> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await captureVisibleTab();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (/MAX_CAPTURE_VISIBLE_TAB|quota|too many/i.test(message) && i < retries - 1) {
+        await new Promise((r) => setTimeout(r, 700));
+        continue;
+      }
+      return null;
+    }
+  }
+  return null;
+}

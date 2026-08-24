@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/accordion";
 import { extractFindings, type AxeResult, type Finding } from "@/engine/finding-mapping";
 import { computeComplianceMatrix, type WcagScoreEntry } from "@/engine/normalize";
-import { runAxeOnTab, callTab, captureVisibleTab } from "../lib/tab-bridge";
+import { runAxeOnTab, callTab, captureVisibleTabWithRetry } from "../lib/tab-bridge";
 
 const PRINCIPLES = ["Perceivable", "Operable", "Understandable", "Robust"] as const;
 
@@ -35,6 +35,45 @@ function escapeHtml(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/** Crops a full-viewport screenshot down to the element's own box (plus a
+ * little padding) -- the same "tight shot of the violated element" style
+ * Lighthouse/axe DevTools use, instead of handing the reader a whole page
+ * screenshot and making them hunt for what's wrong. `rect` is in CSS px
+ * (from content-script.ts's highlight()); captureVisibleTab's PNG is in
+ * device px, so it's scaled by `dpr` before cropping. */
+function cropToElement(
+  dataUrl: string,
+  rect: { x: number; y: number; width: number; height: number },
+  dpr: number
+): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const pad = 24 * dpr;
+      const sx = Math.max(0, Math.round(rect.x * dpr - pad));
+      const sy = Math.max(0, Math.round(rect.y * dpr - pad));
+      const sw = Math.min(img.naturalWidth - sx, Math.round(rect.width * dpr + pad * 2));
+      const sh = Math.min(img.naturalHeight - sy, Math.round(rect.height * dpr + pad * 2));
+      if (sw <= 0 || sh <= 0) {
+        resolve(dataUrl); // off-screen or zero-size -- fall back to the full shot
+        return;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = sw;
+      canvas.height = sh;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
 }
 
 /** Builds a print-ready HTML document: one 16:9 (1280x720 CSS px) page per
@@ -67,9 +106,14 @@ function buildPrintHtml(
     .badge.moderate { background: #fef3c7; color: #92400e; }
     .badge.minor { background: #e5e7eb; color: #374151; }
     .selector { font-family: monospace; font-size: 13px; color: #555; margin: 4px 0 12px; }
-    .shot-wrap { flex: 1; display: flex; align-items: center; justify-content: center; border: 1px solid #e5e5e5; border-radius: 8px; overflow: hidden; background: #fafafa; }
+    .body-row { flex: 1; display: flex; gap: 24px; min-height: 0; }
+    .shot-wrap { flex: 1.2; display: flex; align-items: center; justify-content: center; border: 1px solid #e5e5e5; border-radius: 8px; overflow: hidden; background: #fafafa; min-width: 0; }
     img.shot { max-width: 100%; max-height: 100%; object-fit: contain; }
-    .no-shot { color: #999; font-size: 14px; }
+    .no-shot { color: #999; font-size: 14px; padding: 0 24px; text-align: center; }
+    .fix { flex: 1; min-width: 0; overflow: hidden; }
+    .fix h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: #666; margin: 0 0 6px; }
+    .fix p { font-size: 14px; line-height: 1.5; margin: 0 0 12px; }
+    .fix a { color: #2563eb; font-size: 13px; }
     footer { margin-top: 12px; font-size: 11px; color: #999; }
   `;
 
@@ -84,7 +128,9 @@ function buildPrintHtml(
   `;
 
   const pages = shots
-    .map(({ finding, dataUrl }) => `
+    .map(({ finding, dataUrl }) => {
+      const helpUrl = typeof finding.evidence.helpUrl === "string" ? finding.evidence.helpUrl : null;
+      return `
       <div class="page">
         <h2>${escapeHtml(finding.rule_title)}</h2>
         <p>
@@ -92,11 +138,19 @@ function buildPrintHtml(
           &nbsp; WCAG ${finding.wcag_criteria.join(", ")} (${finding.wcag_level})
         </p>
         <p class="selector">${escapeHtml(finding.selector)}</p>
-        <div class="shot-wrap">
-          ${dataUrl ? `<img class="shot" src="${dataUrl}" />` : `<span class="no-shot">Screenshot unavailable for this element</span>`}
+        <div class="body-row">
+          <div class="shot-wrap">
+            ${dataUrl ? `<img class="shot" src="${dataUrl}" />` : `<span class="no-shot">Screenshot unavailable for this element</span>`}
+          </div>
+          <div class="fix">
+            <h3>How to fix</h3>
+            <p>${escapeHtml(finding.failure_summary || "No remediation detail provided by the rule.")}</p>
+            ${helpUrl ? `<a href="${escapeHtml(helpUrl)}">Learn more →</a>` : ""}
+          </div>
         </div>
       </div>
-    `)
+    `;
+    })
     .join("");
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>ScanA11y report</title><style>${pageCss}</style></head><body>${cover}${pages}</body></html>`;
@@ -211,10 +265,19 @@ export function AuditTab() {
       const withSelector = findings.filter((f) => f.selector).slice(0, 20);
       const shots: { finding: Finding; dataUrl: string | null }[] = [];
       for (const finding of withSelector) {
-        await callTab("highlight", { selector: finding.selector }).catch(() => {});
-        await new Promise((r) => setTimeout(r, 220)); // let scroll/paint settle
-        const dataUrl = await captureVisibleTab().catch(() => null);
+        const hl = await callTab<{ ok: boolean; rect: { x: number; y: number; width: number; height: number } | null; devicePixelRatio: number }>(
+          "highlight",
+          { selector: finding.selector }
+        ).catch(() => null);
+        await new Promise((r) => setTimeout(r, 250)); // let scroll/paint settle
+        // >=550ms between captureVisibleTab calls to stay under Chrome's
+        // ~2/sec quota -- the earlier 220ms-only version silently hit that
+        // quota on nearly every call, which is why screenshots kept coming
+        // back empty.
+        const raw = await captureVisibleTabWithRetry();
+        const dataUrl = raw && hl?.rect ? await cropToElement(raw, hl.rect, hl.devicePixelRatio || 1) : raw;
         shots.push({ finding, dataUrl });
+        await new Promise((r) => setTimeout(r, 300));
       }
       await callTab("clear-highlight").catch(() => {});
 
