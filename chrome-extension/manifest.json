@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ScanA11y — Accessibility Auditor",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Audit the current tab against WCAG 2.2 (axe-core), inspect any element's role/name/contrast, and apply on-page accessibility options — all local, no account, no history stored.",
   "icons": {
     "16": "icons/icon16.png",
@@ -27,8 +27,7 @@
     "sidePanel"
   ],
   "host_permissions": [
-    "http://*/*",
-    "https://*/*"
+    "<all_urls>"
   ],
   "minimum_chrome_version": "116"
 }
