@@ -74,6 +74,9 @@ const REPORT_MARKER_KEY = "scana11yGenerated";
 const PAGE_WIDTH = 1280;
 const PAGE_HEIGHT = 720;
 const PAGE_GAP = 40;
+// Matches the UI's planned findings-list display cap (Task 11) so report
+// generation and the on-screen list stay consistent.
+const MAX_REPORT_FINDINGS = 40;
 
 async function createReportText(
   characters: string,
@@ -160,18 +163,31 @@ async function generateReport(findings: Finding[]): Promise<{ ok: boolean }> {
   cover.setPluginData(REPORT_MARKER_KEY, "1");
   const title = await createReportText("ScanA11y accessibility report", { fontSize: 32, bold: true, x: 48, y: 48 });
   cover.appendChild(title);
-  const summary = await createReportText(
-    `${findings.length} finding(s) · generated ${new Date().toISOString().slice(0, 10)}`,
-    { fontSize: 16, x: 48, y: 100 }
-  );
+  const findingsToRender = findings.slice(0, MAX_REPORT_FINDINGS);
+  let summaryText = `${findings.length} finding(s) · generated ${new Date().toISOString().slice(0, 10)}`;
+  if (findings.length > MAX_REPORT_FINDINGS) {
+    summaryText += ` (showing first ${MAX_REPORT_FINDINGS})`;
+  }
+  const summary = await createReportText(summaryText, { fontSize: 16, x: 48, y: 100 });
   cover.appendChild(summary);
   page.appendChild(cover);
   y += PAGE_HEIGHT + PAGE_GAP;
 
-  for (const finding of findings) {
-    const frame = await buildFindingFrame(finding, y);
-    page.appendChild(frame);
-    y += PAGE_HEIGHT + PAGE_GAP;
+  let failedCount = 0;
+  for (const finding of findingsToRender) {
+    try {
+      const frame = await buildFindingFrame(finding, y);
+      page.appendChild(frame);
+      y += PAGE_HEIGHT + PAGE_GAP;
+    } catch (err) {
+      // One finding failing to build (e.g. loadFontAsync rejecting) shouldn't
+      // abort the rest of the report -- skip it and keep going.
+      failedCount++;
+      console.error("ScanA11y: failed to build report frame for finding", finding.selector, err);
+    }
+  }
+  if (failedCount > 0) {
+    console.warn(`ScanA11y: ${failedCount} finding(s) failed to render into the report`);
   }
 
   figma.currentPage = page;
