@@ -2,6 +2,14 @@ import { extractPrinciple, type Finding } from "@/engine/finding-mapping";
 import { collectNodes } from "../node-helpers";
 import type { FigmaNodeLike } from "../types";
 
+// Note: `\s*\d*` is optional, so a layer deliberately and legitimately named
+// exactly "Frame" or "Line" (no trailing digit) fully matches and gets
+// flagged just like an un-renamed "Frame 12" would. This is the same
+// false-positive class touch-target's original name-regex had. It's judged
+// an acceptable tradeoff here (rather than tightening the pattern, which
+// risks missing real un-numbered default names like a bare "Rectangle")
+// because the finding is low-confidence (0.5) and routed to needs_review,
+// not asserted as a hard failure.
 const DEFAULT_NAME_PATTERN = /^(rectangle|ellipse|vector|image|frame|group|component|instance|polygon|star|line)\s*\d*$/i;
 const IMAGE_LIKE_TYPES = new Set(["RECTANGLE", "ELLIPSE", "VECTOR", "POLYGON", "STAR", "LINE", "BOOLEAN_OPERATION"]);
 
@@ -40,6 +48,9 @@ export function checkMissingDescriptions(roots: FigmaNodeLike[]): Finding[] {
   return findings;
 }
 
+// Roughly the length where a fixed-size label starts looking like body copy
+// rather than a button/badge label -- shorter than that and most fixed-size
+// text in real files is intentional UI chrome, not content.
 const MIN_FLAGGED_LENGTH = 40;
 
 /** WCAG 1.4.4: a fixed-size (not auto-resize) text box holding a
@@ -108,14 +119,21 @@ const HEADING_NAME_PATTERN = /^h[1-6]$|heading/i;
  * are 2+ heading-named layers to compare -- a single heading has nothing
  * to be inconsistent with. */
 export function checkHeadingStructure(roots: FigmaNodeLike[]): Finding[] {
+  // Only nodes with a numeric fontSize can actually be compared for
+  // uniformity -- a node with a mixed/Symbol fontSize (e.g. mixed-size text
+  // selection) has no single size to verify against the others, so it's
+  // excluded from the comparison set entirely rather than just from the
+  // size-equality check while still ending up in the output.
   const headings = collectNodes(roots).filter(
-    (n) => n.type === "TEXT" && n.visible !== false && HEADING_NAME_PATTERN.test(n.name.trim())
+    (n): n is FigmaNodeLike & { fontSize: number } =>
+      n.type === "TEXT" &&
+      n.visible !== false &&
+      HEADING_NAME_PATTERN.test(n.name.trim()) &&
+      typeof n.fontSize === "number"
   );
   if (headings.length < 2) return [];
 
-  const sizes = new Set(
-    headings.map((n) => (typeof n.fontSize === "number" ? n.fontSize : null)).filter((s): s is number => s !== null)
-  );
+  const sizes = new Set(headings.map((n) => n.fontSize));
   if (sizes.size !== 1) return [];
 
   return headings.map((node) => ({

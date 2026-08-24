@@ -39,6 +39,19 @@ describe("checkMissingDescriptions", () => {
     const node: FigmaNodeLike = { id: "n1", name: "Frame 12", type: "FRAME", width: 100, height: 100, visible: true };
     expect(checkMissingDescriptions([node])).toHaveLength(0);
   });
+
+  it("does not flag an invisible node even with a default name and image fill", () => {
+    const node: FigmaNodeLike = {
+      id: "n1",
+      name: "Rectangle 4",
+      type: "RECTANGLE",
+      width: 100,
+      height: 100,
+      visible: false,
+      fills: [{ type: "IMAGE", visible: true }],
+    };
+    expect(checkMissingDescriptions([node])).toHaveLength(0);
+  });
 });
 
 describe("checkFixedResizeText", () => {
@@ -85,6 +98,38 @@ describe("checkFixedResizeText", () => {
     };
     expect(checkFixedResizeText([node])).toHaveLength(0);
   });
+
+  it("does not flag an invisible node even with fixed-resize + long text", () => {
+    const node: FigmaNodeLike = {
+      id: "n1",
+      name: "Body copy",
+      type: "TEXT",
+      width: 200,
+      height: 60,
+      visible: false,
+      textAutoResize: "NONE",
+      characters: "This is a long paragraph of body copy that runs well past forty characters.",
+    };
+    expect(checkFixedResizeText([node])).toHaveLength(0);
+  });
+
+  it("flags fixed-size text at exactly MIN_FLAGGED_LENGTH (40) characters -- boundary is inclusive", () => {
+    const exactly40 = "x".repeat(40);
+    expect(exactly40).toHaveLength(40);
+    const node: FigmaNodeLike = {
+      id: "n1",
+      name: "Body copy",
+      type: "TEXT",
+      width: 200,
+      height: 60,
+      visible: true,
+      textAutoResize: "NONE",
+      characters: exactly40,
+    };
+    const findings = checkFixedResizeText([node]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].evidence).toEqual({ characters: 40 });
+  });
 });
 
 describe("checkHeadingStructure", () => {
@@ -109,5 +154,39 @@ describe("checkHeadingStructure", () => {
   it("ignores text nodes not named like a heading", () => {
     const body: FigmaNodeLike = { id: "b1", name: "Body copy", type: "TEXT", width: 200, height: 30, visible: true, fontSize: 16 };
     expect(checkHeadingStructure([body, body])).toHaveLength(0);
+  });
+
+  it("excludes headings with a mixed/Symbol fontSize from both the comparison and the output", () => {
+    const mixedFontSizeHeading: FigmaNodeLike = {
+      id: "h3",
+      name: "Heading",
+      type: "TEXT",
+      width: 200,
+      height: 30,
+      visible: true,
+      fontSize: Symbol("mixed"),
+    };
+    const findings = checkHeadingStructure([heading("h1", 16), heading("h2", 16), mixedFontSizeHeading]);
+    // Only h1 and h2 are verifiably uniform (both fontSize 16); h3's actual
+    // size was never resolved, so it must not be counted or included.
+    expect(findings).toHaveLength(2);
+    expect(findings.map((f) => f.selector).sort()).toEqual(["h1", "h2"]);
+    expect(findings[0].evidence).toEqual({ headingCount: 2 });
+    expect(findings[0].failure_summary).toContain("All 2 layers");
+  });
+
+  it("treats a layer named 'Subheading' as heading-like, per the unanchored HEADING_NAME_PATTERN", () => {
+    const subheading: FigmaNodeLike = {
+      id: "s1",
+      name: "Subheading",
+      type: "TEXT",
+      width: 200,
+      height: 30,
+      visible: true,
+      fontSize: 16,
+    };
+    const findings = checkHeadingStructure([heading("h1", 16), subheading]);
+    expect(findings).toHaveLength(2);
+    expect(findings.map((f) => f.selector).sort()).toEqual(["h1", "s1"]);
   });
 });
