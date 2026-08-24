@@ -102,6 +102,30 @@ export function AuditTab() {
     return map;
   }, [matrix]);
 
+  // Maps an SC id ("2.4.7") to the findings that failed it, so the
+  // accordion row itself can highlight on the page -- previously the only
+  // way to locate a failure was scrolling down to the separate flat
+  // findings list below.
+  const findingsBySc = useMemo(() => {
+    const map = new Map<string, Finding[]>();
+    for (const f of findings ?? []) {
+      for (const sc of f.wcag_criteria) {
+        if (!map.has(sc)) map.set(sc, []);
+        map.get(sc)!.push(f);
+      }
+    }
+    return map;
+  }, [findings]);
+
+  const highlightSc = useCallback(
+    (scId: string) => {
+      const scFindings = findingsBySc.get(scId) ?? [];
+      const target = scFindings.find((f) => f.selector);
+      if (target) callTab("highlight", { selector: target.selector }).catch(() => {});
+    },
+    [findingsBySc]
+  );
+
   return (
     <div className="space-y-3">
       <Button onClick={runAudit} disabled={loading} className="w-full">
@@ -140,14 +164,24 @@ export function AuditTab() {
                   </AccordionTrigger>
                   <AccordionContent>
                     <div className="space-y-1">
-                      {entries.map((entry) => (
-                        <div key={entry.id} className="flex items-center justify-between text-xs py-0.5">
-                          <span className="truncate">
-                            {entry.id} {entry.name}
-                          </span>
-                          <Badge variant={statusVariant(entry.status)}>{STATUS_LABEL[entry.status]}</Badge>
-                        </div>
-                      ))}
+                      {entries.map((entry) => {
+                        const hasTarget = (findingsBySc.get(entry.id) ?? []).some((f) => f.selector);
+                        return (
+                          <div key={entry.id} className="flex items-center justify-between gap-2 text-xs py-0.5">
+                            <span className="truncate">
+                              {entry.id} {entry.name}
+                            </span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <Badge variant={statusVariant(entry.status)}>{STATUS_LABEL[entry.status]}</Badge>
+                              {entry.status === "fail" && hasTarget && (
+                                <Button size="xs" variant="outline" onClick={() => highlightSc(entry.id)}>
+                                  Show
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </AccordionContent>
                 </AccordionItem>
