@@ -17,6 +17,10 @@ const eslintConfig = defineConfig([
     // (real TS/React, built via Vite) IS linted with the same rules.
     "chrome-extension/dist/**",
     "chrome-extension/vendor/**",
+    // Standalone Figma plugin -- built output, not something to lint.
+    // figma-plugin/code.ts, figma-plugin/src/**, and figma-plugin/ui/**
+    // (real TS/React, built via Vite) ARE linted with the same rules.
+    "figma-plugin/dist/**",
   ]),
 ]);
 
