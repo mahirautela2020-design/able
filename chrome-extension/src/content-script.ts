@@ -136,6 +136,13 @@ if (!(window as unknown as { __ableExtLoaded?: boolean }).__ableExtLoaded) {
     clearHighlight();
     const el = document.querySelector(selector);
     if (!el) return false;
+    // Scroll with behavior:"auto" (not "smooth") BEFORE reading the rect --
+    // an instant scroll reflows synchronously, so the very next
+    // getBoundingClientRect() call already reflects the post-scroll layout.
+    // "smooth" scrolling is animated over several frames, so a rect read
+    // immediately after starting it captures the PRE-scroll position and the
+    // overlay ends up stuck wherever the element used to be.
+    el.scrollIntoView({ behavior: "auto", block: "center" });
     const rect = el.getBoundingClientRect();
     const overlay = document.createElement("div");
     overlay.style.cssText =
@@ -143,13 +150,14 @@ if (!(window as unknown as { __ableExtLoaded?: boolean }).__ableExtLoaded) {
       "left:" + rect.left + "px;top:" + rect.top + "px;width:" + rect.width + "px;height:" + rect.height + "px;";
     document.body.appendChild(overlay);
     highlightEl = overlay;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
     return true;
   }
   function focusEl(selector: string): boolean {
     const el = document.querySelector(selector) as HTMLElement | null;
     if (!el) return false;
-    el.focus();
+    // preventScroll so this doesn't race highlight()'s own scrollIntoView
+    // when both are called back-to-back for the same element.
+    el.focus({ preventScroll: true });
     return true;
   }
 

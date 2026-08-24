@@ -60,7 +60,13 @@ export function InspectTab() {
       setSteps(items);
       setCurrent(0);
       setKbSummary(summary);
-      if (items.length > 0) callTab("focus-el", { selector: items[0].selector }).catch(() => {});
+      if (items.length > 0) {
+        const selector = items[0].selector;
+        callTab("focus-el", { selector })
+          .catch(() => {})
+          .then(() => callTab("highlight", { selector }))
+          .catch(() => {});
+      }
     } catch (e) {
       setError((e as Error).message);
     }
@@ -70,8 +76,14 @@ export function InspectTab() {
     (index: number) => {
       if (index < 0 || index >= steps.length) return;
       setCurrent(index);
-      callTab("focus-el", { selector: steps[index].selector }).catch(() => {});
-      callTab("highlight", { selector: steps[index].selector }).catch(() => {});
+      const selector = steps[index].selector;
+      // Sequenced, not parallel: highlight() does its own scrollIntoView and
+      // reads the element's rect right after -- racing it against focus-el's
+      // own scroll left the overlay landing on stale coordinates.
+      callTab("focus-el", { selector })
+        .catch(() => {})
+        .then(() => callTab("highlight", { selector }))
+        .catch(() => {});
     },
     [steps]
   );
@@ -194,21 +206,41 @@ export function InspectTab() {
           <Button size="sm" onClick={loadContrastPairs} className="w-full">
             Scan contrast pairs ({pairs.length || "…"})
           </Button>
+          {pairs.length === 0 && (
+            <p className="text-xs text-muted-foreground">No pairs scanned yet.</p>
+          )}
           <div className="space-y-1.5 max-h-80 overflow-y-auto">
             {pairs.map((p, i) => {
               const v = contrastVerdict(contrastRatio(p.fg, p.bg));
               return (
-                <div key={i} className="flex items-center justify-between text-xs border rounded px-2 py-1.5">
-                  <div className="flex items-center gap-1.5 min-w-0">
+                <div key={i} className="flex items-center justify-between gap-2 text-xs border rounded px-2 py-1.5">
+                  <div className="flex items-center gap-2 min-w-0">
                     <span
-                      className="w-4 h-4 rounded border shrink-0"
+                      className="w-6 h-6 rounded border shrink-0 flex items-center justify-center text-[10px] font-bold"
                       style={{ backgroundColor: p.bg, color: p.fg }}
+                      title={`text ${p.fg} on background ${p.bg}`}
                     >
-                      A
+                      Ag
                     </span>
-                    <span className="truncate">{p.label}</span>
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{p.label}</p>
+                      <p className="font-mono text-[10px] text-muted-foreground truncate">
+                        {p.fg} on {p.bg}
+                      </p>
+                    </div>
                   </div>
-                  <Badge variant={v.level === "fail" ? "destructive" : "default"}>{v.ratio.toFixed(1)}:1</Badge>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Badge variant={v.level === "fail" ? "destructive" : "default"}>
+                      {v.ratio.toFixed(1)}:1 {v.level === "fail" ? "fail" : v.level}
+                    </Badge>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => callTab("highlight", { selector: p.selector }).catch(() => {})}
+                    >
+                      Show
+                    </Button>
+                  </div>
                 </div>
               );
             })}

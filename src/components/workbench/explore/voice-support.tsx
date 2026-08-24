@@ -35,6 +35,16 @@ function getRecognitionCtor(): SpeechRecognitionCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+// Chrome blocks getUserMedia's mic-permission prompt inside a
+// chrome-extension:// document (side panel/popup) even though
+// webkitSpeechRecognition is present there -- every attempt fails with
+// onerror "not-allowed", which would otherwise look identical to a user
+// actually denying the permission. Detect the extension context up front
+// and say so plainly instead of showing that misleading message.
+function isExtensionContext(): boolean {
+  return typeof window !== "undefined" && window.location.protocol === "chrome-extension:";
+}
+
 const TEXT_SCALES = [100, 125, 150, 175, 200];
 
 /** One command's trigger phrases and effect. Matched by substring against
@@ -128,7 +138,7 @@ interface VoiceSupportProps {
  * feedback), and the running transcript is visible while listening.
  */
 export function VoiceSupport({ settings, onCommand, onScroll, onReset }: VoiceSupportProps) {
-  const [supported] = useState(() => getRecognitionCtor() !== null);
+  const [supported] = useState(() => getRecognitionCtor() !== null && !isExtensionContext());
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [lastCommand, setLastCommand] = useState<string | null>(null);
@@ -187,7 +197,9 @@ export function VoiceSupport({ settings, onCommand, onScroll, onReset }: VoiceSu
       <section className="border-t pt-2">
         <h4 className="font-semibold mb-1.5">Voice Support</h4>
         <p className="text-[11px] text-muted-foreground">
-          Voice commands need SpeechRecognition, which this browser doesn&apos;t support (Chrome/Edge only).
+          {isExtensionContext()
+            ? "Voice commands aren't available inside the extension's side panel — Chrome blocks microphone access there. Try this on the ScanA11y website instead."
+            : "Voice commands need SpeechRecognition, which this browser doesn't support (Chrome/Edge only)."}
         </p>
       </section>
     );
