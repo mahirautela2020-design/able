@@ -54,11 +54,10 @@ describe("checkTextContrast", () => {
   });
 
   it("uses the large-text threshold for 24px+ text", () => {
-    // #999999 on white is ~2.85:1 -- fails both normal (4.5) and large
-    // (3.0) thresholds, so use a ratio that only clears the LARGE
-    // threshold to prove the size branch is actually used: #767676 on
-    // white is ~4.54:1 (passes normal AND large). Use #8a8a8a (~3.5:1)
-    // instead -- passes large-text 3:1 but fails normal-text 4.5:1.
+    // #8a8a8a on white is ~3.5:1 -- clears the large-text 3:1 minimum but
+    // fails the normal-text 4.5:1 minimum, so applying the same color at
+    // 24px vs 16px proves checkTextContrast actually branches on size
+    // rather than always using one threshold.
     const parent: FigmaNodeLike = {
       id: "parent",
       name: "parent",
