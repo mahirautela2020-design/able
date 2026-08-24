@@ -41,12 +41,24 @@ Web Store review — while developing, load it as an "unpacked" extension:
   `AccessibilityOptionsPanel` directly from `../src` (the main app) via a
   Vite `@` alias. Same design system, same component, not a copy.
 - **Content script** (`src/content-script.ts`) — injected on demand
-  (`activeTab` + `scripting`, never always-on) into the active tab. Owns
-  everything that needs direct DOM access: click-to-inspect, contrast
-  pairs, the accessibility-profile CSS/DOM logic, a native keyboard/
-  focus-order walkthrough, and running axe-core. Talks to the side panel
-  over `chrome.runtime` messaging (async — the side panel is a separate
-  execution context from the page, not an iframe).
+  (never always-on) into the active tab. Owns everything that needs direct
+  DOM access: click-to-inspect, contrast pairs, the accessibility-profile
+  CSS/DOM logic, a native keyboard/focus-order walkthrough, and running
+  axe-core. Talks to the side panel over `chrome.runtime` messaging (async
+  — the side panel is a separate execution context from the page, not an
+  iframe).
+
+  Requests `http://*/*` and `https://*/*` host permissions (in addition to
+  `activeTab`/`scripting`) — `activeTab` alone isn't reliable here: a side
+  panel stays open across tab switches and navigation (unlike a popup,
+  which re-grants `activeTab` on every open), so by the time you click a
+  button inside it Chrome's `activeTab` grant frequently no longer covers
+  whatever tab is actually active. Without the broader host permission,
+  every action on a perfectly normal page intermittently failed with a
+  false "browser-internal page" error. This is the standard tradeoff other
+  scripting-based extensions (axe DevTools, WAVE, etc.) make for the same
+  reason — nothing is injected or read until you explicitly trigger an
+  action from the panel.
 - **Background** (`src/background.ts`) — MV3 service worker; its only job
   is `chrome.sidePanel.setPanelBehavior({openPanelOnActionClick: true})`.
 
