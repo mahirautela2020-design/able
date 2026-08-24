@@ -3,7 +3,25 @@ import { collectNodes } from "../node-helpers";
 import type { FigmaNodeLike } from "../types";
 
 const MIN_TOUCH_TARGET = 24;
-const INTERACTIVE_NAME_PATTERN = /button|btn|icon.?button|link|tab(?!le)|toggle|switch|checkbox|radio|menu.?item/i;
+// Word-bounded so each alternative only matches a whole word/token (real layer
+// names are space- or hyphen-separated, e.g. "Icon Button", "close-icon-button",
+// "Nav Link"). Without \b these substrings match inside unrelated words --
+// "tab" inside "Establish"/"Notable", "link" inside "Blinking" -- producing
+// false-positive touch-target findings on non-interactive layers.
+// "icon.?button" was dropped: anything it matches also contains "button",
+// which the standalone \bbutton\b alternative already catches (verified
+// against "close-icon-button" below), so it never fired independently.
+const INTERACTIVE_NAME_PATTERN = /\b(button|btn|link|tab|toggle|switch|checkbox|radio|menu.?item)\b/i;
+// FRAME is intentionally included alongside INSTANCE/COMPONENT: many design
+// files -- especially earlier-stage ones, which are exactly the files most in
+// need of an accessibility pass -- build interactive elements (buttons, nav
+// links, tabs) as plain auto-layout frames without ever componentizing them.
+// Excluding FRAME would silently miss those, a false-negative risk judged
+// worse than the false-positive risk, because the name-pattern gate above
+// already does the real filtering: an undersized FRAME only gets flagged if
+// its name also looks interactive, so generic layout frames ("Card",
+// "Section", "Container", ...) are unaffected regardless of FRAME being in
+// this set.
 const INTERACTIVE_NODE_TYPES = new Set(["INSTANCE", "COMPONENT", "FRAME"]);
 
 /** WCAG 2.5.8: minimum 24x24px target size. There's no reliable way to

@@ -13,6 +13,7 @@ describe("checkTouchTargetSize", () => {
     expect(findings).toHaveLength(1);
     expect(findings[0].wcag_criterion).toBe("2.5.8");
     expect(findings[0].selector).toBe("n1");
+    expect(findings[0].evidence).toMatchObject({ thresholdPx: 24 });
   });
 
   it("does not flag a large enough interactive node", () => {
@@ -41,5 +42,30 @@ describe("checkTouchTargetSize", () => {
       const node = instance({ id: name, name, width: 10, height: 10 });
       expect(checkTouchTargetSize([node]), name).toHaveLength(1);
     }
+  });
+
+  it("does not match interactive-word substrings inside unrelated words", () => {
+    const names = ["Establish Baseline", "Notable Card", "Blinking Cursor"];
+    for (const name of names) {
+      const node = instance({ id: name, name, width: 10, height: 10 });
+      expect(checkTouchTargetSize([node]), name).toHaveLength(0);
+    }
+  });
+
+  it("does not flag a node exactly at the minimum touch target size", () => {
+    const node = instance({ id: "n1", name: "Icon Button", width: 24, height: 24 });
+    expect(checkTouchTargetSize([node])).toHaveLength(0);
+  });
+
+  it("flags an undersized COMPONENT-type node with an interactive name", () => {
+    const node = instance({ id: "n1", name: "Primary Button", type: "COMPONENT", width: 16, height: 16 });
+    const findings = checkTouchTargetSize([node]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].selector).toBe("n1");
+  });
+
+  it("does not flag a small FRAME with a non-interactive name", () => {
+    const node = instance({ id: "n1", name: "Card", type: "FRAME", width: 16, height: 16 });
+    expect(checkTouchTargetSize([node])).toHaveLength(0);
   });
 });
