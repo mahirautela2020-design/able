@@ -2,11 +2,35 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { contrastRatio, contrastVerdict } from "@/lib/contrast";
+import { contrastRatio, contrastVerdict, suggestFix } from "@/lib/contrast";
 import { callTab } from "../lib/tab-bridge";
-import type { InspectedElement, FocusableStep, ContrastPairSample } from "../lib/inspect-types";
+import type { InspectedElement, FocusableStep, ContrastPairSample, OutlineNode } from "../lib/inspect-types";
 
-type Section = "pick" | "keyboard" | "contrast";
+type Section = "pick" | "keyboard" | "contrast" | "outline";
+
+function LevelBadges({ ratio }: { ratio: number }) {
+  const v = contrastVerdict(ratio);
+  return (
+    <div className="flex items-center gap-1.5">
+      <Badge variant={v.passesAA ? "default" : "destructive"}>AA {v.passesAA ? "pass" : "fail"}</Badge>
+      <Badge variant={v.passesAAA ? "default" : "secondary"}>AAA {v.passesAAA ? "pass" : "fail"}</Badge>
+    </div>
+  );
+}
+
+function SuggestedFix({ fg, bg }: { fg: string; bg: string }) {
+  const fix = suggestFix(fg, bg);
+  return (
+    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <span>Suggested fix:</span>
+      <span className="w-4 h-4 rounded border shrink-0" style={{ backgroundColor: bg }} />
+      <span className="font-mono">on {bg}, use</span>
+      <span className="w-4 h-4 rounded border shrink-0" style={{ backgroundColor: fix.fg }} />
+      <span className="font-mono">{fix.fg}</span>
+      <span>({fix.ratio.toFixed(2)}:1)</span>
+    </div>
+  );
+}
 
 export function InspectTab() {
   const [section, setSection] = useState<Section>("pick");
@@ -99,12 +123,23 @@ export function InspectTab() {
     }
   }, []);
 
-  const pickedVerdict = picked ? contrastVerdict(contrastRatio(picked.computed.color, picked.computed.backgroundColor)) : null;
+  // -- outline (headings + landmarks) --
+  const [outlineNodes, setOutlineNodes] = useState<OutlineNode[] | null>(null);
+  const loadOutline = useCallback(async () => {
+    setError(null);
+    try {
+      setOutlineNodes(await callTab<OutlineNode[]>("outline"));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, []);
+
+  const pickedRatio = picked ? contrastRatio(picked.computed.color, picked.computed.backgroundColor) : null;
 
   return (
     <div className="space-y-3">
       <div className="flex gap-1.5">
-        {(["pick", "keyboard", "contrast"] as const).map((s) => (
+        {(["pick", "keyboard", "contrast", "outline"] as const).map((s) => (
           <Button
             key={s}
             size="sm"
@@ -112,7 +147,7 @@ export function InspectTab() {
             className="flex-1 capitalize"
             onClick={() => setSection(s)}
           >
-            {s === "pick" ? "Element" : s === "keyboard" ? "Keyboard" : "Contrast"}
+            {s === "pick" ? "Element" : s === "keyboard" ? "Keyboard" : s === "contrast" ? "Contrast" : "Outline"}
           </Button>
         ))}
       </div>
@@ -135,12 +170,15 @@ export function InspectTab() {
                 </div>
                 <p className="text-muted-foreground truncate">{picked.name || "(no accessible name)"}</p>
                 <p className="font-mono text-[11px] text-muted-foreground truncate">{picked.selector}</p>
-                {pickedVerdict && (
-                  <div className="flex items-center gap-2">
-                    <span>Contrast: {pickedVerdict.ratio.toFixed(2)}:1</span>
-                    <Badge variant={pickedVerdict.level === "fail" ? "destructive" : "default"}>
-                      {pickedVerdict.level === "fail" ? "Fails AA" : `Passes ${pickedVerdict.level}`}
-                    </Badge>
+                {pickedRatio !== null && (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span>Contrast: {pickedRatio.toFixed(2)}:1</span>
+                      <LevelBadges ratio={pickedRatio} />
+                    </div>
+                    {!contrastVerdict(pickedRatio).passesAA && (
+                      <SuggestedFix fg={picked.computed.color} bg={picked.computed.backgroundColor} />
+                    )}
                   </div>
                 )}
                 <p>
@@ -171,12 +209,14 @@ export function InspectTab() {
                 <p>{kbSummary.focusableCount} focusable elements</p>
                 {kbSummary.missingIndicatorCount > 0 && (
                   <p className="text-destructive">
-                    {kbSummary.missingIndicatorCount} missing a visible focus indicator (WCAG 2.4.7)
+                    {kbSummary.missingIndicatorCount} missing a visible focus indicator (WCAG 2.4.7) — add a visible{" "}
+                    <code className="font-mono">:focus-visible</code> outline or box-shadow.
                   </p>
                 )}
                 {kbSummary.unreachableCount > 0 && (
                   <p className="text-destructive">
-                    {kbSummary.unreachableCount} not actually reachable by keyboard
+                    {kbSummary.unreachableCount} not actually reachable by keyboard — check for a positive tabindex
+                    trap or a click-only handler with no keyboard equivalent.
                   </p>
                 )}
               </CardContent>
@@ -211,39 +251,78 @@ export function InspectTab() {
           )}
           <div className="space-y-1.5 max-h-80 overflow-y-auto">
             {pairs.map((p, i) => {
-              const v = contrastVerdict(contrastRatio(p.fg, p.bg));
+              const ratio = contrastRatio(p.fg, p.bg);
+              const v = contrastVerdict(ratio);
               return (
-                <div key={i} className="flex items-center justify-between gap-2 text-xs border rounded px-2 py-1.5">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className="w-6 h-6 rounded border shrink-0 flex items-center justify-center text-[10px] font-bold"
-                      style={{ backgroundColor: p.bg, color: p.fg }}
-                      title={`text ${p.fg} on background ${p.bg}`}
-                    >
-                      Ag
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{p.label}</p>
-                      <p className="font-mono text-[10px] text-muted-foreground truncate">
-                        {p.fg} on {p.bg}
-                      </p>
+                <div key={i} className="border rounded px-2 py-1.5 text-xs space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="w-6 h-6 rounded border shrink-0 flex items-center justify-center text-[10px] font-bold"
+                        style={{ backgroundColor: p.bg, color: p.fg }}
+                        title={`text ${p.fg} on background ${p.bg}`}
+                      >
+                        Ag
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{p.label}</p>
+                        <p className="font-mono text-[10px] text-muted-foreground truncate">
+                          {p.fg} on {p.bg} · {ratio.toFixed(1)}:1
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <LevelBadges ratio={ratio} />
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => callTab("highlight", { selector: p.selector }).catch(() => {})}
+                      >
+                        Show
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <Badge variant={v.level === "fail" ? "destructive" : "default"}>
-                      {v.ratio.toFixed(1)}:1 {v.level === "fail" ? "fail" : v.level}
-                    </Badge>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      onClick={() => callTab("highlight", { selector: p.selector }).catch(() => {})}
-                    >
-                      Show
-                    </Button>
-                  </div>
+                  {!v.passesAA && <SuggestedFix fg={p.fg} bg={p.bg} />}
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {section === "outline" && (
+        <div className="space-y-2">
+          <Button size="sm" onClick={loadOutline} className="w-full">
+            Scan headings & landmarks ({outlineNodes?.length ?? "…"})
+          </Button>
+          <p className="text-[11px] text-muted-foreground">
+            A lighter DOM-based outline, not the website&apos;s full Playwright accessibility-tree snapshot (that runs
+            server-side and can&apos;t execute inside a content script).
+          </p>
+          {outlineNodes && outlineNodes.length === 0 && (
+            <p className="text-xs text-destructive">No headings or landmark regions found on this page.</p>
+          )}
+          <div className="space-y-1 max-h-80 overflow-y-auto">
+            {outlineNodes?.map((n, i) => (
+              <div key={i} className="flex items-center justify-between gap-2 text-xs border rounded px-2 py-1">
+                <span className="truncate flex items-center gap-1.5">
+                  {n.kind === "heading" ? (
+                    <Badge variant="outline">H{n.level}</Badge>
+                  ) : (
+                    <Badge variant="secondary">{n.role}</Badge>
+                  )}
+                  <span className="truncate">{n.label}</span>
+                </span>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={() => callTab("highlight", { selector: n.selector }).catch(() => {})}
+                >
+                  Show
+                </Button>
+              </div>
+            ))}
           </div>
         </div>
       )}

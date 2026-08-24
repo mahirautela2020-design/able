@@ -127,6 +127,35 @@ if (!(window as unknown as { __ableExtLoaded?: boolean }).__ableExtLoaded) {
     return pairs;
   }
 
+  // ---------------- landmarks/headings outline ----------------
+  // NOT the same thing as the website's Accessibility Tree (that's built
+  // server-side from Playwright's real accessibility-tree snapshot via
+  // /api/explore/ax-snapshot -- a content script has no equivalent API to
+  // call). This is a lighter DOM-order walk of headings + landmark regions,
+  // useful for the same "does this page have a sane structure" question but
+  // built from plain DOM/ARIA inspection, not a genuine AX tree.
+  const LANDMARK_SELECTOR =
+    'header, nav, main, footer, aside, [role="banner"], [role="navigation"], [role="main"], [role="contentinfo"], [role="complementary"], [role="search"], [role="region"][aria-label], [role="region"][aria-labelledby]';
+
+  function outline() {
+    const nodes = Array.from(document.querySelectorAll(`h1,h2,h3,h4,h5,h6,${LANDMARK_SELECTOR}`));
+    return nodes
+      .map((el) => {
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) return null;
+        const tag = el.tagName.toLowerCase();
+        const isHeading = /^h[1-6]$/.test(tag);
+        return {
+          kind: isHeading ? "heading" : "landmark",
+          level: isHeading ? Number(tag[1]) : null,
+          role: roleOf(el),
+          label: nameOf(el) || (isHeading ? "(empty heading)" : tag),
+          selector: cssSelector(el),
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+  }
+
   let highlightEl: HTMLElement | null = null;
   function clearHighlight() {
     highlightEl?.remove();
@@ -385,6 +414,9 @@ if (!(window as unknown as { __ableExtLoaded?: boolean }).__ableExtLoaded) {
           break;
         case "contrast-pairs":
           sendResponse(contrastPairs());
+          break;
+        case "outline":
+          sendResponse(outline());
           break;
         case "highlight":
           sendResponse(highlight(msg.selector));

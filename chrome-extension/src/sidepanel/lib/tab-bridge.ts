@@ -15,10 +15,14 @@
  * it only fails for pages that actually can't be scripted.
  */
 
-async function getActiveTabId(): Promise<number> {
+async function getActiveTab(): Promise<chrome.tabs.Tab> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error("No active tab");
-  return tab.id;
+  return tab;
+}
+
+async function getActiveTabId(): Promise<number> {
+  return (await getActiveTab()).id!;
 }
 
 function friendlyInjectionError(e: unknown): Error {
@@ -57,4 +61,16 @@ export async function ensureAxeLoaded(): Promise<number> {
 export async function runAxeOnTab(): Promise<{ ok: boolean; result?: unknown; error?: string }> {
   const tabId = await ensureAxeLoaded();
   return chrome.tabs.sendMessage(tabId, { type: "run-axe" });
+}
+
+/** PNG data URL of the active tab's currently-visible viewport -- used to
+ * build the PDF report's per-finding evidence images. Requires host access
+ * to the tab's origin (covered by manifest.json's http(s) host_permissions,
+ * no separate "tabs"/"<all_urls>" grant needed). Only captures what's
+ * currently in the viewport, so callers must scroll/highlight the target
+ * element into view first (see AuditTab's downloadPdf). */
+export async function captureVisibleTab(): Promise<string> {
+  const tab = await getActiveTab();
+  if (tab.windowId === undefined) throw new Error("No active window");
+  return chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
 }
