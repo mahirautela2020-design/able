@@ -60,6 +60,19 @@ async function handle(msg: PluginMessage): Promise<unknown> {
 }
 
 figma.ui.onmessage = async (msg: PluginMessage) => {
+  // This is an RPC pattern (unlike content-script.ts's fire-and-respond
+  // router): the UI side keys a pending promise on `msg.id` and resolves it
+  // when a response with a matching `id` arrives. If `msg` is malformed --
+  // falsy, or missing a string `id` -- there is no id to route a response
+  // back to, so attempting `figma.ui.postMessage({ id: msg.id, ... })` would
+  // either throw (msg is null/undefined) or post a reply keyed on
+  // undefined/garbage that no waiting promise is listening for. Either way
+  // the caller would hang. The only correct move is to drop the message
+  // silently: no promise was ever created for it on the UI side, so no
+  // response is expected.
+  if (!msg || typeof msg.id !== "string") {
+    return;
+  }
   try {
     const result = await handle(msg);
     figma.ui.postMessage({ id: msg.id, ok: true, result });
