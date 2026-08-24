@@ -31,6 +31,7 @@ export function App() {
   const [findings, setFindings] = useState<Finding[] | null>(null);
   const [testedScIds, setTestedScIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [missingNodeIndex, setMissingNodeIndex] = useState<number | null>(null);
 
   const runAudit = useCallback(async () => {
     setLoading(true);
@@ -79,10 +80,22 @@ export function App() {
   return (
     <div className="p-3 space-y-3 text-xs">
       <div className="flex gap-1.5">
-        <Button size="sm" variant={scope === "selection" ? "default" : "outline"} className="flex-1" onClick={() => setScope("selection")}>
+        <Button
+          size="sm"
+          variant={scope === "selection" ? "default" : "outline"}
+          className="flex-1"
+          aria-pressed={scope === "selection"}
+          onClick={() => setScope("selection")}
+        >
           Selection
         </Button>
-        <Button size="sm" variant={scope === "page" ? "default" : "outline"} className="flex-1" onClick={() => setScope("page")}>
+        <Button
+          size="sm"
+          variant={scope === "page" ? "default" : "outline"}
+          className="flex-1"
+          aria-pressed={scope === "page"}
+          onClick={() => setScope("page")}
+        >
           Current page
         </Button>
       </div>
@@ -157,10 +170,20 @@ export function App() {
                   <Button
                     size="xs"
                     variant="outline"
-                    onClick={() => callPlugin("highlight-node", { nodeId: f.selector }).catch(() => {})}
+                    onClick={() => {
+                      setMissingNodeIndex(null);
+                      callPlugin<boolean>("highlight-node", { nodeId: f.selector })
+                        .then((found) => {
+                          if (!found) setMissingNodeIndex(i);
+                        })
+                        .catch(() => {});
+                    }}
                   >
                     Select on canvas
                   </Button>
+                  {missingNodeIndex === i && (
+                    <p className="text-destructive">Element no longer on canvas.</p>
+                  )}
                 </div>
               ))}
             </div>
