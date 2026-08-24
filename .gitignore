@@ -71,3 +71,6 @@ REVERSE_ENGINEERING.md
 WORKBENCH_VISION.md
 accessibility-auditor-oss-reference.md
 docs/phase-reports/
+
+# Chrome extension build output (run `npm run build:extension` to produce)
+chrome-extension/dist/

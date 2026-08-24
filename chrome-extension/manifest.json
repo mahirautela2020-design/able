@@ -1,13 +1,30 @@
 {
   "manifest_version": 3,
-  "name": "ScanA11y — Accessibility Auditor",
-  "version": "1.0.0",
-  "description": "Audit the current tab against WCAG 2.2 (axe-core), inspect any element's role/name/contrast, and apply on-page accessibility options — all local, no account, no history stored.",
-  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
-  "action": {
-    "default_popup": "popup.html",
-    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+  "name": "ScanA11y \u2014 Accessibility Auditor",
+  "version": "2.0.0",
+  "description": "Audit the current tab against WCAG 2.2 (axe-core), inspect any element's role/name/contrast, and apply on-page accessibility options \u2014 all local, no account, no history stored.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
-  "permissions": ["activeTab", "scripting"],
-  "minimum_chrome_version": "100"
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "dist/index.html"
+  },
+  "background": {
+    "service_worker": "dist/background.js"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "sidePanel"
+  ],
+  "minimum_chrome_version": "116"
 }
