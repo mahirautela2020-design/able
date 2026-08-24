@@ -51,9 +51,22 @@ interface PluginMessage {
 function highlightNode(nodeId: string): boolean {
   const node = lastAuditedNodes.get(nodeId);
   if (!node) return false;
-  figma.currentPage.selection = [node];
-  figma.viewport.scrollAndZoomIntoView([node]);
-  return true;
+  try {
+    figma.currentPage.selection = [node];
+    figma.viewport.scrollAndZoomIntoView([node]);
+    return true;
+  } catch {
+    // lastAuditedNodes holds live SceneNode references captured at audit
+    // time. If the node was deleted (or otherwise removed) after indexing
+    // but before this call, the map still "has" it, so the !node guard
+    // above passes — but mutating selection/viewport with a stale
+    // reference throws a native Figma platform error (e.g. "the node has
+    // been removed"). From the user's perspective "never audited" and
+    // "audited but since deleted" are the same situation: this element
+    // isn't there anymore. Collapse both to the same `false` result
+    // instead of letting an opaque platform error bubble up.
+    return false;
+  }
 }
 
 async function handle(msg: PluginMessage): Promise<unknown> {
