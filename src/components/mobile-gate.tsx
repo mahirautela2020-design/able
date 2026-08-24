@@ -53,7 +53,7 @@ export function MobileGate() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p id="mobile-gate-desc" className="text-sm text-muted-foreground">
-            ScanA11y's workbench uses side-by-side panels and drag-to-resize
+            ScanA11y&apos;s workbench uses side-by-side panels and drag-to-resize
             interactions that need a wider screen to work properly. For the
             full experience, open this on a desktop or laptop browser.
           </p>
