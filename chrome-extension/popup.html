@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ScanA11y</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <span class="logo">✓</span>
+    <h1>ScanA11y</h1>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="audit" role="tab" aria-selected="true">Audit</button>
+    <button class="tab" data-tab="inspect" role="tab" aria-selected="false">Inspect</button>
+    <button class="tab" data-tab="a11y" role="tab" aria-selected="false">Accessibility</button>
+  </nav>
+
+  <main id="panel-audit" class="panel">
+    <button id="run-audit" class="primary">Run audit on this page</button>
+    <p class="hint">Runs axe-core directly in this tab. Nothing is sent to a server, nothing is saved.</p>
+    <div id="audit-status" class="status" hidden></div>
+    <ul id="audit-results" class="results"></ul>
+  </main>
+
+  <main id="panel-inspect" class="panel" hidden>
+    <button id="toggle-inspect" class="primary">Start inspecting</button>
+    <p class="hint">Click any element on the page to see its role, accessible name, contrast ratio, and touch-target size. Press Escape or the on-page "Exit" button to stop.</p>
+  </main>
+
+  <main id="panel-a11y" class="panel" hidden>
+    <button id="toggle-a11y" class="primary">Open accessibility options</button>
+    <p class="hint">Adds a floating accessibility button to the page: profiles (Low Vision, Dyslexia, ADHD, etc.), contrast, text size, and reading aids. Settings are saved per-site in that page's own local storage — nothing is sent to us.</p>
+  </main>
+
+  <footer>
+    <span>No login. No history stored. <a href="https://scana11y-nine.vercel.app" target="_blank" rel="noopener">Full audit →</a></span>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>
