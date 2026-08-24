@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Standalone Chrome extension -- vanilla JS, ships its own vendored
+    // axe-core/widget copies, not part of the Next.js app's TS/React rules.
+    "chrome-extension/**",
   ]),
 ]);
 
