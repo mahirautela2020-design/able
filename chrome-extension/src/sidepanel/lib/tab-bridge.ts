@@ -3,19 +3,38 @@
  * the active tab, make sure content-script.js is injected (idempotent --
  * the script itself no-ops on a second injection, see __ableExtLoaded),
  * then relay a chrome.runtime message and return its response.
+ *
+ * Deliberately does NOT pre-check tab.url against an http(s) pattern --
+ * chrome.tabs.query() only reliably includes `url` when the extension's
+ * activeTab grant currently covers that exact tab, and because a side
+ * panel stays open across tab switches/navigation (unlike a popup), that
+ * grant doesn't consistently apply to whatever tab happens to be active
+ * when a button is clicked. That made every real http(s) page look like a
+ * "browser-internal page" whenever url came back empty. Attempting the
+ * injection and catching Chrome's own error is the authoritative check --
+ * it only fails for pages that actually can't be scripted.
  */
 
 async function getActiveTabId(): Promise<number> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error("No active tab");
-  if (!/^https?:/.test(tab.url || "")) {
-    throw new Error("Open a regular http(s) page first (not a browser-internal page).");
-  }
   return tab.id;
 }
 
+function friendlyInjectionError(e: unknown): Error {
+  const message = e instanceof Error ? e.message : String(e);
+  if (/cannot access|extension gallery|chrome:\/\/|chrome-extension:\/\/|edge:\/\//i.test(message)) {
+    return new Error("Open a regular website first (not a browser-internal page like chrome:// or the extensions gallery).");
+  }
+  return e instanceof Error ? e : new Error(message);
+}
+
 async function ensureContentScript(tabId: number): Promise<void> {
-  await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/content-script.js"] });
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/content-script.js"] });
+  } catch (e) {
+    throw friendlyInjectionError(e);
+  }
 }
 
 export async function callTab<T = unknown>(type: string, payload: Record<string, unknown> = {}): Promise<T> {
@@ -26,7 +45,11 @@ export async function callTab<T = unknown>(type: string, payload: Record<string,
 
 export async function ensureAxeLoaded(): Promise<number> {
   const tabId = await getActiveTabId();
-  await chrome.scripting.executeScript({ target: { tabId }, files: ["vendor/axe.min.js"] });
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["vendor/axe.min.js"] });
+  } catch (e) {
+    throw friendlyInjectionError(e);
+  }
   await ensureContentScript(tabId);
   return tabId;
 }
