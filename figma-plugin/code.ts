@@ -69,6 +69,116 @@ function highlightNode(nodeId: string): boolean {
   }
 }
 
+const REPORT_PAGE_NAME = "ScanA11y Report";
+const REPORT_MARKER_KEY = "scana11yGenerated";
+const PAGE_WIDTH = 1280;
+const PAGE_HEIGHT = 720;
+const PAGE_GAP = 40;
+
+async function createReportText(
+  characters: string,
+  opts: { fontSize: number; bold?: boolean; x: number; y: number; width?: number }
+): Promise<TextNode> {
+  const style = opts.bold ? "Bold" : "Regular";
+  await figma.loadFontAsync({ family: "Inter", style });
+  const text = figma.createText();
+  text.fontName = { family: "Inter", style };
+  text.characters = characters;
+  text.fontSize = opts.fontSize;
+  text.x = opts.x;
+  text.y = opts.y;
+  if (opts.width) {
+    text.textAutoResize = "HEIGHT";
+    text.resize(opts.width, text.height);
+  }
+  return text;
+}
+
+async function buildFindingFrame(finding: Finding, y: number): Promise<FrameNode> {
+  const frame = figma.createFrame();
+  frame.name = finding.rule_title;
+  frame.resize(PAGE_WIDTH, PAGE_HEIGHT);
+  frame.x = 0;
+  frame.y = y;
+  frame.setPluginData(REPORT_MARKER_KEY, "1");
+
+  const heading = await createReportText(finding.rule_title, { fontSize: 24, bold: true, x: 48, y: 48, width: 1184 });
+  frame.appendChild(heading);
+
+  const meta = await createReportText(
+    `${finding.severity.toUpperCase()} · WCAG ${finding.wcag_criteria.join(", ")} (${finding.wcag_level ?? "—"})`,
+    { fontSize: 14, x: 48, y: 90 }
+  );
+  frame.appendChild(meta);
+
+  const node = lastAuditedNodes.get(finding.selector);
+  if (node && "exportAsync" in node) {
+    try {
+      const bytes = await (node as ExportMixin).exportAsync({ format: "PNG", constraint: { type: "SCALE", value: 2 } });
+      const image = figma.createImage(bytes);
+      const shot = figma.createRectangle();
+      shot.name = "Evidence screenshot";
+      shot.resize(600, 400);
+      shot.x = 48;
+      shot.y = 140;
+      shot.fills = [{ type: "IMAGE", scaleMode: "FIT", imageHash: image.hash }];
+      frame.appendChild(shot);
+    } catch {
+      // Node may have been deleted/moved since the audit ran -- fall back
+      // to a text-only frame rather than failing the whole report.
+    }
+  }
+
+  const rec = await createReportText(finding.failure_summary, { fontSize: 14, x: 700, y: 140, width: 532 });
+  frame.appendChild(rec);
+
+  return frame;
+}
+
+async function generateReport(findings: Finding[]): Promise<{ ok: boolean }> {
+  let page = figma.root.children.find(
+    (p): p is PageNode => p.type === "PAGE" && p.name === REPORT_PAGE_NAME
+  );
+  if (!page) {
+    page = figma.createPage();
+    page.name = REPORT_PAGE_NAME;
+  } else {
+    // Replace only ScanA11y-generated frames from a previous run, so
+    // re-running doesn't grow the page unbounded and doesn't touch
+    // anything a user might have manually added to this page.
+    for (const child of [...page.children]) {
+      if (child.getPluginData(REPORT_MARKER_KEY) === "1") child.remove();
+    }
+  }
+
+  let y = 0;
+  const cover = figma.createFrame();
+  cover.name = "Cover";
+  cover.resize(PAGE_WIDTH, PAGE_HEIGHT);
+  cover.x = 0;
+  cover.y = y;
+  cover.setPluginData(REPORT_MARKER_KEY, "1");
+  const title = await createReportText("ScanA11y accessibility report", { fontSize: 32, bold: true, x: 48, y: 48 });
+  cover.appendChild(title);
+  const summary = await createReportText(
+    `${findings.length} finding(s) · generated ${new Date().toISOString().slice(0, 10)}`,
+    { fontSize: 16, x: 48, y: 100 }
+  );
+  cover.appendChild(summary);
+  page.appendChild(cover);
+  y += PAGE_HEIGHT + PAGE_GAP;
+
+  for (const finding of findings) {
+    const frame = await buildFindingFrame(finding, y);
+    page.appendChild(frame);
+    y += PAGE_HEIGHT + PAGE_GAP;
+  }
+
+  figma.currentPage = page;
+  figma.viewport.scrollAndZoomIntoView(page.children);
+  return { ok: true };
+}
+
 async function handle(msg: PluginMessage): Promise<unknown> {
   switch (msg.type) {
     case "get-selection-count":
@@ -77,6 +187,8 @@ async function handle(msg: PluginMessage): Promise<unknown> {
       return runAudit(msg.scope as "selection" | "page");
     case "highlight-node":
       return highlightNode(msg.nodeId as string);
+    case "generate-report":
+      return generateReport(msg.findings as Finding[]);
     default:
       throw new Error(`Unknown message type: ${msg.type}`);
   }
