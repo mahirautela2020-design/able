@@ -35,6 +35,33 @@ function getRecognitionCtor(): SpeechRecognitionCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+// Web Speech API onerror codes and what each actually means for the user --
+// "not-allowed" alone was previously shown as a flat "Microphone access
+// denied," which is technically true but unhelpful: on a locked-down
+// corporate laptop the OS/browser policy can deny the mic (or block the
+// underlying speech-recognition network request) with no permission prompt
+// ever shown, making it look identical to "you clicked Block" when it's
+// actually IT policy the user has no control over. Each code gets a
+// distinct, actionable message instead of one generic line.
+function explainVoiceError(code: string): string {
+  switch (code) {
+    case "not-allowed":
+      return "Microphone access denied. Check your browser's address-bar mic icon, and if you're on a managed/work device, your organization's IT policy may block microphone access entirely.";
+    case "service-not-allowed":
+      return "Voice recognition was blocked at the browser or system level (common on managed work devices) -- this isn't something the page controls.";
+    case "audio-capture":
+      return "No microphone was found. Voice commands need a working mic connected to this device.";
+    case "network":
+      return "Couldn't reach the voice-recognition service -- this often happens on restrictive corporate networks or VPNs that block it.";
+    case "no-speech":
+      return "Didn't hear anything -- try again and speak after clicking Start.";
+    case "aborted":
+      return "Voice recognition stopped.";
+    default:
+      return `Voice recognition error: ${code}`;
+  }
+}
+
 // Chrome blocks getUserMedia's mic-permission prompt inside a
 // chrome-extension:// document (side panel/popup) even though
 // webkitSpeechRecognition is present there -- every attempt fails with
@@ -182,7 +209,7 @@ export function VoiceSupport({ settings, onCommand, onScroll, onReset }: VoiceSu
       setTranscript(text);
     };
     recognition.onerror = (ev) => {
-      setError(ev.error === "not-allowed" ? "Microphone access denied." : `Voice recognition error: ${ev.error}`);
+      setError(explainVoiceError(ev.error));
       setListening(false);
     };
     recognition.onend = () => setListening(false);
