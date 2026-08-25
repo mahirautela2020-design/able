@@ -4,7 +4,7 @@ Audits the selected frames or the current page against a Figma-appropriate subse
 WCAG 2.2, lets you jump to any finding on canvas, and writes a full report — one 16:9 frame
 per finding, with a screenshot and a recommendation — into a new "ScanA11y Report" page in
 the same file. No login, no history stored, no network calls (enforced by the manifest's
-`networkAccess.allowedDomains: []`).
+`networkAccess.allowedDomains: ["none"]`).
 
 ## Build it
 
