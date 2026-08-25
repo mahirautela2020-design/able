@@ -77,6 +77,12 @@ export default function Home() {
             >
               Browser Extension
             </Link>
+            <Link
+              href="/figma-plugin"
+              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+            >
+              Figma Plugin
+            </Link>
           </div>
         </header>
 
