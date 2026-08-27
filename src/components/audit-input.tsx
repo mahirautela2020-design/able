@@ -14,6 +14,15 @@ import type { PdfChecklistItem } from "@/lib/pdf/guided-checklist";
 
 type Mode = "url" | "figma" | "image" | "pdf" | "apk" | "ios";
 
+// Vercel serverless functions hard-cap the request body at ~4.3MB
+// (platform-level — not something any of these routes can raise). Above that
+// the platform itself rejects the upload with a plain-text response before
+// our code runs at all, which used to surface as an opaque "Request failed"
+// (res.json() throwing on a non-JSON body). Checking client-side means the
+// user gets a clear, immediate message instead of a doomed round-trip — and
+// this cap applies regardless of what each route's own size limit claims.
+const MAX_UPLOAD_MB = 4;
+
 const MODES: { key: Mode; label: string; icon: typeof Globe; hint: string }[] = [
   { key: "url", label: "URL", icon: Globe, hint: "Public website URL" },
   { key: "figma", label: "Figma", icon: PenTool, hint: "Figma file key or share link" },
@@ -101,7 +110,8 @@ export function AuditInput() {
           headers,
           body: JSON.stringify({ url }),
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
+        if (!data) return toast.error(`Failed to start audit (server responded ${res.status})`);
         if (res.status === 429 && data.redirectTo) {
           toast.error(data.error);
           window.location.href = data.redirectTo;
@@ -153,6 +163,19 @@ export function AuditInput() {
       }
 
       if (!file) return toast.error("Choose a file first");
+
+      // Checked here, not just server-side: Vercel rejects an oversized
+      // request body at the platform level, before any route runs, with a
+      // plain-text response — res.json() below would throw on that, which is
+      // exactly how this used to surface as an opaque "Request failed" with
+      // no indication of why. Catching it here means an immediate, specific
+      // message instead of a doomed upload.
+      if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+        return toast.error(
+          `"${file.name}" is ${(file.size / (1024 * 1024)).toFixed(1)}MB — the server can't accept uploads over ${MAX_UPLOAD_MB}MB.`
+        );
+      }
+
       const form = new FormData();
       form.append("file", file);
       if (mode === "apk" || mode === "ios") form.append("auditId", crypto.randomUUID());
@@ -169,9 +192,26 @@ export function AuditInput() {
         // to add its own multipart boundary.
         { method: "POST", body: form, headers: authHeader }
       );
-      const data = await res.json();
+
+      // The success/validation-error paths below always return JSON, but a
+      // platform-level rejection (413 from Vercel, a proxy timeout, etc.)
+      // does not — parsing that as JSON would throw and land in the generic
+      // catch below with no useful message. Handle it here instead.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- shape varies per upload mode; used loosely throughout this file already.
+      let data: any;
+      try {
+        data = await res.json();
+      } catch {
+        toast.error(
+          res.status === 413
+            ? "That file is too large for the server to accept."
+            : `Upload failed (server responded ${res.status}). Try a smaller file or try again.`
+        );
+        return;
+      }
+
       if (!res.ok) {
-        setResult({ error: data.error });
+        setResult({ error: data.error ?? "Upload failed" });
         if (res.status === 401) {
           toast.error(session ? data.error : "Sign in to analyze this file type.");
         } else if (res.status === 422) {
@@ -283,8 +323,18 @@ export function AuditInput() {
                       ? "Upload an .ipa"
                       : "Upload an APK"}
             </span>
-            <span className="text-xs text-muted-foreground">
-              {file ? `${(file.size / 1024).toFixed(0)} KB` : "Click to choose"}
+            <span
+              className={`text-xs ${
+                file && file.size > MAX_UPLOAD_MB * 1024 * 1024
+                  ? "text-destructive"
+                  : "text-muted-foreground"
+              }`}
+            >
+              {file
+                ? `${(file.size / 1024).toFixed(0)} KB${
+                    file.size > MAX_UPLOAD_MB * 1024 * 1024 ? ` — over the ${MAX_UPLOAD_MB}MB limit` : ""
+                  }`
+                : `Click to choose (max ${MAX_UPLOAD_MB}MB)`}
             </span>
           </label>
         )}
