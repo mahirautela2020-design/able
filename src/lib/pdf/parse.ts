@@ -22,6 +22,8 @@
 /** Analysing every page of a 900-page file would blow the serverless budget.
  * Pages beyond this are counted but not structurally inspected — the caller
  * surfaces `pagesAnalyzed` so the report can say so honestly. */
+import { ensurePdfDomGlobals } from "./dom-polyfill";
+
 export const MAX_ANALYZED_PAGES = 50;
 
 /** Typed error for malformed/encrypted input — the route maps it to HTTP 400. */
@@ -158,6 +160,11 @@ function asString(value: unknown): string | null {
  * password-protected (we deliberately never attempt to bypass encryption).
  */
 export async function parsePdf(buffer: Buffer): Promise<PdfDocumentModel> {
+  // Must run BEFORE the import below: pdf.js evaluates `new DOMMatrix()` at
+  // module top level, and in Node that global only exists if its optional
+  // @napi-rs/canvas dependency was bundled. See dom-polyfill.ts.
+  ensurePdfDomGlobals();
+
   // Imported lazily: pdf.js is a large ESM-only dependency that must not be
   // pulled into the module graph of routes that never touch a PDF.
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
