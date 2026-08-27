@@ -52,7 +52,10 @@ type AuditPageRow = {
 type FindingRow = {
   id?: string;
   audit_id: string;
-  page_id: string;
+  // Nullable in the DB (findings.page_id has no NOT NULL constraint) — a
+  // page-less audit source (a PDF upload, not a crawled site) has no
+  // audit_pages row to attach to.
+  page_id: string | null;
   bucket: string;
   rule_id: string;
   rule_title: string;
@@ -77,12 +80,14 @@ type FindingRow = {
 export async function insertAudit(
   targetUrl: string,
   config: Record<string, unknown> = {},
-  owner?: { userId: string | null; ip: string | null }
+  owner?: { userId: string | null; ip: string | null },
+  platform: string = "web"
 ): Promise<string> {
   const { data, error } = await supabase
     .from("audits")
     .insert({
       target_url: targetUrl,
+      platform,
       config,
       created_by: owner?.userId ?? null,
       created_ip: owner?.ip ?? null,
@@ -98,7 +103,7 @@ export async function getAudit(auditId: string) {
   const { data, error } = await supabase
     .from("audits")
     .select(
-      "id, target_url, status, config, progress, fast_preview, report_path, error_code, error_detail, created_at, completed_at, created_by, created_ip"
+      "id, target_url, platform, status, config, progress, fast_preview, report_path, error_code, error_detail, created_at, completed_at, created_by, created_ip"
     )
     .eq("id", auditId)
     .single();
@@ -388,21 +393,44 @@ export async function failStaleRunningAudits(
 }
 
 /**
+ * List every real object path under a storage prefix, recursing into
+ * subfolders. Supabase's `list()` is one level at a time — an entry with
+ * `id: null` is a pseudo-folder, not a removable object, so a single
+ * top-level `list()` silently misses anything nested (e.g. the
+ * `${auditId}/uploads/<file>` path every upload route writes to). Verified
+ * against the live bucket: `list(auditId)` on an audit with an uploaded PDF
+ * returns only `{name: "uploads", id: null}` — the actual file was never
+ * enumerated, so `deleteAudit` was deleting the DB row but leaking the file
+ * in storage forever, past the 24h retention window this app advertises.
+ */
+async function listAllObjectPaths(prefix: string): Promise<string[]> {
+  const { data: entries } = await supabase.storage.from("evidence").list(prefix, { limit: 500 });
+  if (!entries || entries.length === 0) return [];
+
+  const paths: string[] = [];
+  for (const entry of entries) {
+    const path = `${prefix}/${entry.name}`;
+    if (entry.id === null) {
+      // Pseudo-folder — recurse instead of treating it as a removable object.
+      paths.push(...(await listAllObjectPaths(path)));
+    } else {
+      paths.push(path);
+    }
+  }
+  return paths;
+}
+
+/**
  * Delete an audit and everything tied to it (pages, findings via cascade,
  * and the evidence storage folder). Returns true if the audit existed.
  */
 export async function deleteAudit(auditId: string): Promise<boolean> {
-  // 1. Delete evidence from storage first (folder = auditId/).
-  //    NOTE: storage.remove() matches exact object paths, not prefixes, so
-  //    pass the full paths of every object under the folder. Best-effort:
-  //    list → remove each; a missing folder is not an error.
+  // 1. Delete evidence from storage first (folder = auditId/), recursing
+  //    into any nested paths (uploads/, etc.) — best-effort: a missing
+  //    folder is not an error.
   try {
-    const { data: objects } = await supabase.storage
-      .from("evidence")
-      .list(auditId, { limit: 500 });
-
-    if (objects && objects.length > 0) {
-      const paths = objects.map((o) => `${auditId}/${o.name}`);
+    const paths = await listAllObjectPaths(auditId);
+    if (paths.length > 0) {
       await supabase.storage.from("evidence").remove(paths);
     }
   } catch {
@@ -471,6 +499,26 @@ export async function createSignedUrl(
 
   if (error) throw error;
   return data.signedUrl;
+}
+
+/**
+ * Mint a signed URL the BROWSER can upload directly to, bypassing our own
+ * Next.js route entirely — Vercel serverless functions hard-cap the request
+ * body at ~4.3MB regardless of any limit this app declares, so a route that
+ * receives the file itself can never honor a larger stated limit. Minting
+ * server-side (service role) is required because storage RLS here is
+ * deny-all to anon; the token this returns is what authorizes the upload,
+ * independent of table/object RLS.
+ */
+export async function createSignedUploadUrl(
+  path: string
+): Promise<{ path: string; token: string }> {
+  const { data, error } = await supabase.storage
+    .from("evidence")
+    .createSignedUploadUrl(path);
+
+  if (error) throw error;
+  return { path: data.path, token: data.token };
 }
 
 // ─── Figma OAuth connections ──────────────────────────────────────────────

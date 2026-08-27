@@ -51,6 +51,9 @@ export default async function WorkbenchPage({
     }))
   );
 
+  const pdfPath = (audit.config as { pdf?: { pdfPath?: string } } | null)?.pdf?.pdfPath ?? null;
+  const pdfPreviewUrl = pdfPath ? await sign(pdfPath) : null;
+
   return (
     <div className="h-screen flex flex-col">
       <div className="flex-1 min-h-0">
@@ -59,6 +62,8 @@ export default async function WorkbenchPage({
           targetUrl={audit.target_url}
           auditStatus={audit.status}
           findings={signedFindings}
+          platform={audit.platform}
+          pdfPreviewUrl={pdfPreviewUrl}
         />
       </div>
     </div>

@@ -40,6 +40,11 @@ export async function buildReportHtml(auditId: string): Promise<string> {
 
   if (!audit) return "<html><body><h1>Audit not found</h1></body></html>";
 
+  const isPdf = audit.platform === "pdf";
+  const pdfSummary = isPdf
+    ? ((audit.config as { pdf?: Record<string, unknown> } | null)?.pdf ?? {})
+    : null;
+
   // Same module set the scan actually ran with — an audit's report must not
   // claim a module-gated SC "passed" when that module was never enabled.
   const configuredModules = (audit.config as { modules?: string[] } | null)?.modules;
@@ -109,7 +114,14 @@ export async function buildReportHtml(auditId: string): Promise<string> {
         </h3>
         <p class="meta">${escapeHtml(f.selector || "")} · ${escapeHtml(f.bucket)}</p>
         <p>${escapeHtml(f.failure_summary || "")}</p>
-        ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" alt="Screenshot evidence for ${escapeHtml(f.rule_title)}" class="evidence-img">` : `<p class="meta">No screenshot captured for this finding.</p>`}
+        ${f.recommendation ? `<p class="meta"><strong>Fix:</strong> ${escapeHtml(f.recommendation)}</p>` : ""}
+        ${
+          imgUrl
+            ? `<img src="${escapeHtml(imgUrl)}" alt="Screenshot evidence for ${escapeHtml(f.rule_title)}" class="evidence-img">`
+            : isPdf
+              ? ""
+              : `<p class="meta">No screenshot captured for this finding.</p>`
+        }
       </div>`;
   }
 
@@ -149,7 +161,7 @@ export async function buildReportHtml(auditId: string): Promise<string> {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ScanA11y Audit Report — ${escapeHtml(audit.target_url)}</title>
+  <title>ScanA11y ${isPdf ? "PDF " : ""}Audit Report — ${escapeHtml(audit.target_url)}</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 960px; margin: 0 auto; padding: 2rem; color: #1a1a1a; }
     h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
@@ -190,11 +202,16 @@ export async function buildReportHtml(auditId: string): Promise<string> {
   </style>
 </head>
 <body>
-  <h1>Accessibility Audit Report</h1>
+  <h1>${isPdf ? "PDF Accessibility Audit Report" : "Accessibility Audit Report"}</h1>
   <p class="meta">
-    URL: ${escapeHtml(audit.target_url)}<br>
+    ${isPdf ? "File" : "URL"}: ${escapeHtml(audit.target_url)}<br>
     Date: ${new Date(audit.created_at).toISOString().split("T")[0]}<br>
-    Standard: WCAG 2.2 | Status: ${audit.status}
+    Standard: ${isPdf ? "PDF/UA-1 (ISO 14289-1) + WCAG PDF Techniques" : "WCAG 2.2"} | Status: ${audit.status}
+    ${
+      isPdf
+        ? `<br>Tagged: ${pdfSummary?.tagged ? "Yes" : "No"} · Language: ${escapeHtml(String(pdfSummary?.language ?? "Not declared"))} · Pages: ${escapeHtml(String(pdfSummary?.pageCount ?? "—"))}${pdfSummary?.truncated ? ` (first ${escapeHtml(String(pdfSummary?.pagesAnalyzed))} analysed)` : ""}`
+        : ""
+    }
   </p>
 
   <nav class="toc">
@@ -236,8 +253,12 @@ export async function buildReportHtml(auditId: string): Promise<string> {
   </table>
 
   <p class="footer">
-    Audited with ScanA11y 0.1 — Chromium headless. Fonts and rendering may differ from real browsers.
-    Evidence is retained for 30 days. This report is for informational purposes and does not
+    ${
+      isPdf
+        ? "Audited with ScanA11y 0.1 — deterministic checks against the PDF's own tag tree and metadata (PDF/UA-1 via the Matterhorn Protocol, W3C WCAG PDF Techniques). No AI model participates in this audit."
+        : "Audited with ScanA11y 0.1 — Chromium headless. Fonts and rendering may differ from real browsers."
+    }
+    Evidence is retained for 24 hours. This report is for informational purposes and does not
     constitute legal advice.
   </p>
 </body>
