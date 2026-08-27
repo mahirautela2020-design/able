@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["sharp", "@sparticuz/chromium", "playwright-core"],
+  serverExternalPackages: ["sharp", "@sparticuz/chromium", "playwright-core", "pdfjs-dist"],
   outputFileTracingIncludes: {
     // Vercel's Turbopack tracing drops non-JS assets from external packages.
     // playwright-core needs browsers.json + .js bundles at runtime, and
