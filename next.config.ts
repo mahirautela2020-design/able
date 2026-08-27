@@ -16,10 +16,15 @@ const nextConfig: NextConfig = {
     // top-level `new DOMMatrix()` and the function dies with "DOMMatrix is
     // not defined" even though every local run works (Node dev installs the
     // platform binary, so the polyfill quietly succeeds there).
+    // pdfjs-dist itself needs tracing for the same reason: even with no
+    // rendering, it resolves pdf.worker.mjs by path at parse time (the Node
+    // "fake worker" path), plus cmaps/standard fonts for some encodings —
+    // all loaded dynamically, so none of it is statically reachable.
     "/api/**": [
       "./node_modules/playwright-core/**",
       "./node_modules/@sparticuz/chromium/**",
       "./node_modules/@napi-rs/**",
+      "./node_modules/pdfjs-dist/**",
     ],
   },
 };
