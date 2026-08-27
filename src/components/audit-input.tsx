@@ -3,18 +3,22 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Globe, ImageIcon, Smartphone, PenTool, Apple } from "lucide-react";
+import { Loader2, Globe, ImageIcon, Smartphone, PenTool, Apple, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { ConnectFigmaButton } from "@/components/connect-figma-button";
 import { supabase } from "@/lib/supabase/client";
+import { PdfAuditResult, type PdfAuditSummary } from "@/components/pdf-audit-result";
+import type { PdfFinding } from "@/lib/pdf/checks";
+import type { PdfChecklistItem } from "@/lib/pdf/guided-checklist";
 
-type Mode = "url" | "figma" | "image" | "apk" | "ios";
+type Mode = "url" | "figma" | "image" | "pdf" | "apk" | "ios";
 
 const MODES: { key: Mode; label: string; icon: typeof Globe; hint: string }[] = [
   { key: "url", label: "URL", icon: Globe, hint: "Public website URL" },
   { key: "figma", label: "Figma", icon: PenTool, hint: "Figma file key or share link" },
   { key: "image", label: "UI Screenshot", icon: ImageIcon, hint: "PNG / JPEG / WebP" },
+  { key: "pdf", label: "PDF", icon: FileText, hint: "PDF/UA + WCAG document audit" },
   { key: "apk", label: "APK", icon: Smartphone, hint: "Android app package" },
   { key: "ios", label: "iOS", icon: Apple, hint: "iOS .ipa app bundle" },
 ];
@@ -63,11 +67,20 @@ export function AuditInput() {
     };
     error?: string;
   } | null>(null);
+  // PDF audits return a differently shaped payload (document facts + rule
+  // findings + a manual checklist), so they get their own state rather than
+  // being squeezed into the generic `result` above.
+  const [pdfResult, setPdfResult] = useState<{
+    summary: PdfAuditSummary;
+    findings: PdfFinding[];
+    guidedChecklist: PdfChecklistItem[];
+  } | null>(null);
   const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setResult(null);
+    setPdfResult(null);
 
     if (mode === "url") {
       if (!url.trim()) return toast.error("Enter a URL");
@@ -149,7 +162,9 @@ export function AuditInput() {
           ? "/api/uploads/apk"
           : mode === "ios"
             ? "/api/uploads/ipa"
-            : "/api/uploads/image",
+            : mode === "pdf"
+              ? "/api/uploads/pdf"
+              : "/api/uploads/image",
         // Don't set Content-Type manually for FormData — the browser needs
         // to add its own multipart boundary.
         { method: "POST", body: form, headers: authHeader }
@@ -162,6 +177,14 @@ export function AuditInput() {
         } else if (res.status === 422) {
           toast.error(data.error);
         }
+        return;
+      }
+      if (mode === "pdf") {
+        setPdfResult({
+          summary: data.summary,
+          findings: data.findings,
+          guidedChecklist: data.guidedChecklist,
+        });
         return;
       }
       setResult({
@@ -191,6 +214,7 @@ export function AuditInput() {
             onClick={() => {
               setMode(key);
               setResult(null);
+              setPdfResult(null);
             }}
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
               mode === key
@@ -231,7 +255,7 @@ export function AuditInput() {
             />
           </div>
         )}
-        {(mode === "image" || mode === "apk" || mode === "ios") && (
+        {(mode === "image" || mode === "pdf" || mode === "apk" || mode === "ios") && (
           <label className="flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-md p-6 cursor-pointer hover:bg-accent/40 transition-colors text-center">
             <input
               type="file"
@@ -239,9 +263,11 @@ export function AuditInput() {
               accept={
                 mode === "image"
                   ? "image/png,image/jpeg,image/webp"
-                  : mode === "ios"
-                    ? ".ipa"
-                    : ".apk"
+                  : mode === "pdf"
+                    ? "application/pdf,.pdf"
+                    : mode === "ios"
+                      ? ".ipa"
+                      : ".apk"
               }
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               disabled={loading}
@@ -251,9 +277,11 @@ export function AuditInput() {
                 ? file.name
                 : mode === "image"
                   ? "Upload a UI screenshot"
-                  : mode === "ios"
-                    ? "Upload an .ipa"
-                    : "Upload an APK"}
+                  : mode === "pdf"
+                    ? "Upload a PDF document"
+                    : mode === "ios"
+                      ? "Upload an .ipa"
+                      : "Upload an APK"}
             </span>
             <span className="text-xs text-muted-foreground">
               {file ? `${(file.size / 1024).toFixed(0)} KB` : "Click to choose"}
@@ -269,6 +297,13 @@ export function AuditInput() {
 
       {result?.error && (
         <p className="text-sm text-destructive mt-3">{result.error}</p>
+      )}
+      {pdfResult && (
+        <PdfAuditResult
+          summary={pdfResult.summary}
+          findings={pdfResult.findings}
+          guidedChecklist={pdfResult.guidedChecklist}
+        />
       )}
       {result?.bundle && (
         <div className="mt-4 space-y-3">
