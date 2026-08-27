@@ -2,7 +2,14 @@ import { parsePdf, PdfParseError } from "@/lib/pdf/parse";
 import { runPdfChecks, summarizeStructure } from "@/lib/pdf/checks";
 import { PDF_GUIDED_CHECKLIST } from "@/lib/pdf/guided-checklist";
 
-const MAX_PDF_MB = 25;
+// Vercel's serverless functions hard-cap the request body at ~4.3MB
+// (platform-level, not adjustable). Anything larger than this is rejected by
+// the platform before this route ever runs, with a plain-text response the
+// client can't parse as JSON — so this must stay under that ceiling, with
+// margin for multipart overhead, or uploads fail with an opaque error no
+// matter what this route does. The client checks file size before uploading
+// so most users never round-trip a doomed request at all (see audit-input.tsx).
+const MAX_PDF_MB = 4;
 
 /** Some browsers/OSes send an empty or generic type for .pdf; fall back to the
  * extension rather than rejecting a legitimate upload. */
