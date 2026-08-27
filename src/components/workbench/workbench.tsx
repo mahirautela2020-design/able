@@ -10,12 +10,14 @@ import { supabase, authHeaders } from "@/lib/supabase/client";
 import type { FastPreview } from "@/lib/psi";
 import { ScreenReaderPanel } from "@/components/workbench/explore/screen-reader-panel";
 import { PreviewPane } from "@/components/workbench/preview-pane";
+import { PdfPreviewPane } from "@/components/workbench/pdf-preview-pane";
 import { InspectRail } from "@/components/workbench/explore/inspect-rail";
 import { useExplore } from "@/components/workbench/explore/use-explore";
 import {
   AccessibilityOptionsPanel,
   type Orientation,
 } from "@/components/workbench/explore/accessibility-options";
+import { PDF_GUIDED_CHECKLIST } from "@/lib/pdf/guided-checklist";
 
 type WorkbenchTab = "checklist" | "inspect" | "screen-reader" | "a11y";
 
@@ -39,6 +41,12 @@ interface WorkbenchProps {
   targetUrl: string;
   auditStatus: string;
   findings: WorkbenchFinding[];
+  /** "web" (default) or "pdf" — a PDF audit has no live site to preview,
+   * inspect, or re-run, so those affordances are gated off it. */
+  platform?: string;
+  /** Signed URL to the uploaded PDF, for the right-column preview. Only
+   * meaningful when platform === "pdf". */
+  pdfPreviewUrl?: string | null;
 }
 
 export const PRINCIPLES = [
@@ -83,7 +91,15 @@ const SEVERITY_DOT: Record<string, string> = {
  *  - RIGHT: live interactive preview of the audited URL in a sandboxed
  *    iframe, with a findings drawer for the selected SC.
  */
-export function Workbench({ auditId, targetUrl, auditStatus, findings }: WorkbenchProps) {
+export function Workbench({
+  auditId,
+  targetUrl,
+  auditStatus,
+  findings,
+  platform = "web",
+  pdfPreviewUrl = null,
+}: WorkbenchProps) {
+  const isPdf = platform === "pdf";
   const router = useRouter();
   const [activeSc, setActiveSc] = useState<string | null>(null);
   const [collapsedPrinciples, setCollapsedPrinciples] = useState<Set<string>>(new Set());
@@ -141,7 +157,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
     iframeRef,
     targetUrl,
     auditId,
-    enabled: activeTab === "inspect",
+    enabled: !isPdf && activeTab === "inspect",
   });
 
   // Live-poll while the audit is queued/running so the checklist fills in
@@ -250,6 +266,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
   // X-Frame-Options from a cross-origin iframe (every external site throws
   // on contentWindow access), so we ask the API for the real headers.
   useEffect(() => {
+    if (isPdf) return; // no live site to check embedding headers for
     let cancelled = false;
     (async () => {
       try {
@@ -266,7 +283,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
     return () => {
       cancelled = true;
     };
-  }, [targetUrl, previewKey]);
+  }, [targetUrl, previewKey, isPdf]);
 
   // First available full-page screenshot (captured during the audit) —
   // used as the preview when the site blocks iframing.
@@ -495,7 +512,7 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
                 {stopping ? "Stopping…" : "Stop"}
               </button>
             )}
-            {status === "failed" && (
+            {status === "failed" && !isPdf && (
               <button
                 onClick={() => handleRerun()}
                 disabled={rerunning}
@@ -504,13 +521,21 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
                 {rerunning ? "Starting…" : "Retry"}
               </button>
             )}
-            {status === "complete" && (
+            {status === "complete" && !isPdf && (
               <button
                 onClick={() => requestRerun()}
                 disabled={rerunning}
                 className="text-[11px] px-2 py-0.5 rounded border hover:bg-accent/50 transition-colors disabled:opacity-50"
               >
                 {rerunning ? "Starting…" : "Re-run"}
+              </button>
+            )}
+            {isPdf && (status === "complete" || status === "failed") && (
+              <button
+                onClick={() => router.push("/")}
+                className="text-[11px] px-2 py-0.5 rounded border hover:bg-accent/50 transition-colors"
+              >
+                Upload another PDF
               </button>
             )}
           </div>
@@ -614,19 +639,27 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
         <div className="flex border-b text-xs">
           {(
             [
-              { key: "checklist", label: "Checklist" },
-              { key: "inspect", label: "Inspect" },
-              { key: "screen-reader", label: "Screen Reader" },
-              { key: "a11y", label: "Accessibility" },
+              { key: "checklist", label: "Checklist", disabled: false },
+              // Inspect and Accessibility act on a live webpage's DOM via a
+              // bridge script injected into the preview iframe — a static
+              // PDF has neither, so these are genuinely not applicable
+              // rather than just unimplemented.
+              { key: "inspect", label: "Inspect", disabled: isPdf },
+              { key: "screen-reader", label: "Screen Reader", disabled: false },
+              { key: "a11y", label: "Accessibility", disabled: isPdf },
             ] as const
           ).map((m) => (
             <button
               key={m.key}
-              onClick={() => setActiveTab(m.key)}
+              onClick={() => !m.disabled && setActiveTab(m.key)}
+              disabled={m.disabled}
+              title={m.disabled ? "Not applicable to PDF documents — this tool operates on a live webpage." : undefined}
               className={`flex-1 py-2 px-1 font-medium transition-colors ${
-                activeTab === m.key
-                  ? "text-primary border-b-2 border-primary"
-                  : "text-muted-foreground hover:text-foreground"
+                m.disabled
+                  ? "text-muted-foreground/40 cursor-not-allowed"
+                  : activeTab === m.key
+                    ? "text-primary border-b-2 border-primary"
+                    : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {m.label}
@@ -762,7 +795,28 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
         )}
         {activeTab === "screen-reader" && (
           <div className="flex-1 min-h-0">
-            <ScreenReaderPanel auditId={auditId} targetUrl={targetUrl} />
+            {isPdf ? (
+              <div className="h-full overflow-y-auto p-3">
+                <p className="text-xs text-muted-foreground mb-2">
+                  A PDF has no live screen-reader session to record — this is the manual checklist
+                  for the ~47 PDF/UA failure conditions no tool can decide (alt-text quality,
+                  reading order, OCR accuracy…), each with why it needs a person.
+                </p>
+                <ol className="list-decimal list-inside space-y-2">
+                  {PDF_GUIDED_CHECKLIST.map((step) => (
+                    <li key={step.id} className="text-xs">
+                      <span className="font-mono text-muted-foreground">{step.wcagSc}</span>{" "}
+                      {step.instruction}
+                      <span className="block ml-4 text-muted-foreground text-[11px] mt-0.5">
+                        Why manual: {step.whyManual}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ) : (
+              <ScreenReaderPanel auditId={auditId} targetUrl={targetUrl} />
+            )}
           </div>
         )}
         {activeTab === "a11y" && (
@@ -808,26 +862,30 @@ export function Workbench({ auditId, targetUrl, auditStatus, findings }: Workben
 
       {/* ── RIGHT: live preview + findings ── */}
       <main className="flex-1 flex flex-col min-w-0">
-        <PreviewPane
-          targetUrl={targetUrl}
-          previewKey={previewKey}
-          iframeRef={iframeRef}
-          interactive={activeTab === "inspect"}
-          ctrl={ctrl}
-          orientation={orientation}
-          firstScreenshot={firstScreenshot}
-          frameBlocked={frameBlocked}
-          editingUrl={editingUrl}
-          setEditingUrl={setEditingUrl}
-          urlDraft={urlDraft}
-          setUrlDraft={setUrlDraft}
-          rerunning={rerunning}
-          onSubmitUrl={() => {
-            setEditingUrl(false);
-            if (urlDraft.trim() !== targetUrl) requestRerun();
-          }}
-          onReload={() => setPreviewKey((k) => k + 1)}
-        />
+        {isPdf ? (
+          <PdfPreviewPane fileName={targetUrl} previewUrl={pdfPreviewUrl} />
+        ) : (
+          <PreviewPane
+            targetUrl={targetUrl}
+            previewKey={previewKey}
+            iframeRef={iframeRef}
+            interactive={activeTab === "inspect"}
+            ctrl={ctrl}
+            orientation={orientation}
+            firstScreenshot={firstScreenshot}
+            frameBlocked={frameBlocked}
+            editingUrl={editingUrl}
+            setEditingUrl={setEditingUrl}
+            urlDraft={urlDraft}
+            setUrlDraft={setUrlDraft}
+            rerunning={rerunning}
+            onSubmitUrl={() => {
+              setEditingUrl(false);
+              if (urlDraft.trim() !== targetUrl) requestRerun();
+            }}
+            onReload={() => setPreviewKey((k) => k + 1)}
+          />
+        )}
 
         {/* Findings drawer for selected SC */}
         {activeSc && (

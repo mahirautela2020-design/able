@@ -8,9 +8,6 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { ConnectFigmaButton } from "@/components/connect-figma-button";
 import { supabase } from "@/lib/supabase/client";
-import { PdfAuditResult, type PdfAuditSummary } from "@/components/pdf-audit-result";
-import type { PdfFinding } from "@/lib/pdf/checks";
-import type { PdfChecklistItem } from "@/lib/pdf/guided-checklist";
 
 type Mode = "url" | "figma" | "image" | "pdf" | "apk" | "ios";
 
@@ -22,6 +19,14 @@ type Mode = "url" | "figma" | "image" | "pdf" | "apk" | "ios";
 // user gets a clear, immediate message instead of a doomed round-trip — and
 // this cap applies regardless of what each route's own size limit claims.
 const MAX_UPLOAD_MB = 4;
+
+// PDF is the one upload type that bypasses this app's own routes for the
+// file transfer itself (see handlePdfSubmit) — it PUTs directly from the
+// browser to Supabase Storage via a signed URL, so Vercel's body cap above
+// never applies to it. The real ceiling is Supabase Storage's own per-file
+// limit, and audits (PDFs included) are deleted within 24h regardless of
+// size, so 25MB is honest here in a way it never was on the old route.
+const MAX_PDF_UPLOAD_MB = 25;
 
 const MODES: { key: Mode; label: string; icon: typeof Globe; hint: string }[] = [
   { key: "url", label: "URL", icon: Globe, hint: "Public website URL" },
@@ -76,20 +81,96 @@ export function AuditInput() {
     };
     error?: string;
   } | null>(null);
-  // PDF audits return a differently shaped payload (document facts + rule
-  // findings + a manual checklist), so they get their own state rather than
-  // being squeezed into the generic `result` above.
-  const [pdfResult, setPdfResult] = useState<{
-    summary: PdfAuditSummary;
-    findings: PdfFinding[];
-    guidedChecklist: PdfChecklistItem[];
-  } | null>(null);
   const router = useRouter();
+
+  /**
+   * PDF audits get the same workbench experience as URL audits (left
+   * checklist, right preview, downloadable 16:9 report) rather than an
+   * inline result — which means the audit needs a real persisted id before
+   * analysis even starts. Three steps:
+   *   1. POST /api/uploads/pdf/init — creates the audit row, mints a
+   *      Supabase Storage signed upload URL. Tiny request/response, so
+   *      Vercel's body cap is irrelevant here.
+   *   2. Upload the file DIRECTLY to Supabase Storage from the browser —
+   *      bypasses this app's routes (and their body limit) entirely.
+   *   3. POST /api/uploads/pdf/finalize — downloads it server-side, runs the
+   *      deterministic PDF/UA + WCAG checks, marks the audit complete.
+   * Then redirect to /workbench/:id, exactly like a URL audit does.
+   */
+  async function handlePdfSubmit(file: File) {
+    if (file.size > MAX_PDF_UPLOAD_MB * 1024 * 1024) {
+      toast.error(
+        `"${file.name}" is ${(file.size / (1024 * 1024)).toFixed(1)}MB — the limit is ${MAX_PDF_UPLOAD_MB}MB.`
+      );
+      return;
+    }
+    if (!supabase) {
+      toast.error("Upload isn't configured right now — try again later.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const initRes = await fetch("/api/uploads/pdf/init", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, fileSize: file.size }),
+      });
+      const initData = await initRes.json().catch(() => null);
+      if (!initData) {
+        toast.error(`Upload failed (server responded ${initRes.status})`);
+        return;
+      }
+      if (initRes.status === 429 && initData.redirectTo) {
+        toast.error(initData.error);
+        window.location.href = initData.redirectTo;
+        return;
+      }
+      if (!initRes.ok) {
+        toast.error(initData.error || "Failed to start PDF audit");
+        return;
+      }
+
+      const { auditId, path, token } = initData;
+      const { error: uploadError } = await supabase.storage
+        .from("evidence")
+        .uploadToSignedUrl(path, token, file);
+      if (uploadError) {
+        toast.error(`Upload failed: ${uploadError.message}`);
+        return;
+      }
+
+      const finalizeRes = await fetch("/api/uploads/pdf/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auditId }),
+      });
+      const finalizeData = await finalizeRes.json().catch(() => null);
+      if (!finalizeRes.ok) {
+        toast.error(finalizeData?.error || "PDF analysis failed");
+        // The audit row still exists (marked failed by the route) so the
+        // user can see why on the workbench rather than losing the context.
+        router.push(`/workbench/${auditId}`);
+        return;
+      }
+
+      toast.success("PDF audit complete");
+      router.push(`/workbench/${auditId}`);
+    } catch {
+      toast.error("Upload failed");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setResult(null);
-    setPdfResult(null);
+
+    if (mode === "pdf") {
+      if (!file) return toast.error("Choose a file first");
+      return handlePdfSubmit(file);
+    }
 
     if (mode === "url") {
       if (!url.trim()) return toast.error("Enter a URL");
@@ -185,9 +266,7 @@ export function AuditInput() {
           ? "/api/uploads/apk"
           : mode === "ios"
             ? "/api/uploads/ipa"
-            : mode === "pdf"
-              ? "/api/uploads/pdf"
-              : "/api/uploads/image",
+            : "/api/uploads/image",
         // Don't set Content-Type manually for FormData — the browser needs
         // to add its own multipart boundary.
         { method: "POST", body: form, headers: authHeader }
@@ -219,14 +298,6 @@ export function AuditInput() {
         }
         return;
       }
-      if (mode === "pdf") {
-        setPdfResult({
-          summary: data.summary,
-          findings: data.findings,
-          guidedChecklist: data.guidedChecklist,
-        });
-        return;
-      }
       setResult({
         findings: data.findings,
         summary: data.summary,
@@ -254,7 +325,6 @@ export function AuditInput() {
             onClick={() => {
               setMode(key);
               setResult(null);
-              setPdfResult(null);
             }}
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
               mode === key
@@ -323,37 +393,28 @@ export function AuditInput() {
                       ? "Upload an .ipa"
                       : "Upload an APK"}
             </span>
-            <span
-              className={`text-xs ${
-                file && file.size > MAX_UPLOAD_MB * 1024 * 1024
-                  ? "text-destructive"
-                  : "text-muted-foreground"
-              }`}
-            >
-              {file
-                ? `${(file.size / 1024).toFixed(0)} KB${
-                    file.size > MAX_UPLOAD_MB * 1024 * 1024 ? ` — over the ${MAX_UPLOAD_MB}MB limit` : ""
-                  }`
-                : `Click to choose (max ${MAX_UPLOAD_MB}MB)`}
-            </span>
+            {(() => {
+              const maxMb = mode === "pdf" ? MAX_PDF_UPLOAD_MB : MAX_UPLOAD_MB;
+              const overLimit = !!file && file.size > maxMb * 1024 * 1024;
+              return (
+                <span className={`text-xs ${overLimit ? "text-destructive" : "text-muted-foreground"}`}>
+                  {file
+                    ? `${(file.size / 1024).toFixed(0)} KB${overLimit ? ` — over the ${maxMb}MB limit` : ""}`
+                    : `Click to choose (max ${maxMb}MB)`}
+                </span>
+              );
+            })()}
           </label>
         )}
 
         <Button type="submit" disabled={loading} className="w-full sm:w-auto">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {loading ? "Working…" : mode === "url" ? "Audit" : "Analyze"}
+          {loading ? "Working…" : mode === "url" || mode === "pdf" ? "Audit" : "Analyze"}
         </Button>
       </form>
 
       {result?.error && (
         <p className="text-sm text-destructive mt-3">{result.error}</p>
-      )}
-      {pdfResult && (
-        <PdfAuditResult
-          summary={pdfResult.summary}
-          findings={pdfResult.findings}
-          guidedChecklist={pdfResult.guidedChecklist}
-        />
       )}
       {result?.bundle && (
         <div className="mt-4 space-y-3">
