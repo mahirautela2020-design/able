@@ -38,13 +38,13 @@ const MAX_PAGES = parseInt(process.env.MAX_PAGES || "5", 10);
  * for onFailure/cancel to recover it. Leaves ~15s headroom for Supabase
  * writes, sharp image processing, and response serialization after the
  * scan itself returns. */
-const PAGE_SCAN_TIMEOUT_MS = 45_000;
+const PAGE_SCAN_TIMEOUT_MS = 35_000;
 
 /** Same reasoning as PAGE_SCAN_TIMEOUT_MS — the crawl step (page discovery)
  * previously had no deadline at all, so a slow/JS-heavy seed page could hang
  * the "crawl" step past the platform's maxDuration with the same silent-
  * stuck-forever failure mode. */
-const CRAWL_TIMEOUT_MS = 45_000;
+const CRAWL_TIMEOUT_MS = 20_000;
 
 /** Race a promise against a deadline; on expiry resolves with "TIMEOUT". */
 async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T | "TIMEOUT"> {

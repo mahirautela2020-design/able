@@ -1,4 +1,4 @@
-import { getAudit, getFindingsForAudit, createSignedUrl } from "@/lib/supabase/server";
+import { getAudit, getFindingsForAudit, createSignedUrl, failStaleRunningAudits } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
 import { getClientIp } from "@/lib/http";
 
@@ -8,6 +8,13 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+
+    // Recover a "running" audit whose execution was silently lost (worker
+    // crash/restart, or a hung network call that never timed out). This is
+    // the endpoint the workbench actually polls every 4s while an audit is
+    // in progress, so the stale-execution check has to live here, not just
+    // on the sibling /api/audits/[id] route nothing in the UI calls.
+    await failStaleRunningAudits({ auditId: id }).catch(() => {});
 
     // Isolation: reports are private. Signed-in owners may read; anonymous
     // requesters may read only when their IP matches the audit's creator IP

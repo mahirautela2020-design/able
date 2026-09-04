@@ -18,7 +18,7 @@ interface AuditRow {
   report_path: string | null;
 }
 
-const { getAudit, getFindingsForAudit, createSignedUrl } = vi.hoisted(() => ({
+const { getAudit, getFindingsForAudit, createSignedUrl, failStaleRunningAudits } = vi.hoisted(() => ({
   getAudit: vi.fn<(id: string) => Promise<AuditRow>>(async (id: string) => {
     if (id === "missing-audit") throw new Error("not found");
     return {
@@ -32,12 +32,14 @@ const { getAudit, getFindingsForAudit, createSignedUrl } = vi.hoisted(() => ({
   }),
   getFindingsForAudit: vi.fn(async () => []),
   createSignedUrl: vi.fn(async (path: string) => `https://signed.example.com/${path}`),
+  failStaleRunningAudits: vi.fn(async () => []),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
   getAudit,
   getFindingsForAudit,
   createSignedUrl,
+  failStaleRunningAudits,
 }));
 
 vi.mock("@supabase/supabase-js", () => ({

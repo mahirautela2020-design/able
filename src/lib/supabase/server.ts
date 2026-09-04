@@ -253,11 +253,16 @@ export async function getRecentAudits(
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  // Isolation: users only see their own audits (by owner id). Anonymous
-  // rows (created_by null, e.g. pre-isolation or unauthenticated) are
-  // visible only when the requester's IP matches the recorded creator IP.
+  // Isolation: users only see their own audits (by owner id). Signed-in
+  // users are matched by owner id ONLY — matching by IP too would leak
+  // anyone else's anonymous audits run from the same shared IP (office
+  // Wi-Fi, VPN, CGNAT) into a teammate's own "Recent Audits" list, which is
+  // exactly what an IP-based OR clause did here before. Anonymous
+  // (unauthenticated) requesters have no owner id to match on, so they
+  // still fall back to IP — that's an inherent limitation of the
+  // no-login free tier, not something scoped to a signed-in account.
   if (scope?.userId) {
-    query = query.or(`created_by.eq.${scope.userId},and(created_by.is.null,created_ip.eq.${scope.ip ?? ""})`);
+    query = query.eq("created_by", scope.userId);
   } else if (scope?.ip) {
     query = query.or(`created_ip.eq.${scope.ip},and(created_by.is.null,created_ip.eq.${scope.ip})`);
   } else {
@@ -353,8 +358,10 @@ export async function cleanupExpiredData(): Promise<{
  * network call that hangs without ever timing out (e.g. connecting to a
  * closed port) — and which the Inngest function therefore never got a
  * chance to mark "failed" itself. Anything stuck at status="running" past
- * `maxMinutes` (default STALE_AUDIT_MINUTES, well beyond
- * PAGE_SCAN_TIMEOUT_MS × MAX_PAGES worst case) is marked "failed" with
+ * `maxMinutes` (default STALE_AUDIT_MINUTES=5, comfortably beyond the
+ * ~3.25min CRAWL_TIMEOUT_MS + PAGE_SCAN_TIMEOUT_MS × MAX_PAGES worst case,
+ * so a whole audit — complete or self-healed to "failed" — never leaves the
+ * user waiting past 5 minutes) is marked "failed" with
  * error_code "STALE_EXECUTION". Pass `auditId` to scope the check to one
  * row (used on each workbench poll); omit it for a system-wide sweep (used
  * by the retention cron) so audits nobody is actively polling still recover.
@@ -364,7 +371,7 @@ export async function failStaleRunningAudits(
   opts: { auditId?: string; maxMinutes?: number } = {}
 ): Promise<string[]> {
   const maxMinutes =
-    opts.maxMinutes ?? parseInt(process.env.STALE_AUDIT_MINUTES || "10", 10);
+    opts.maxMinutes ?? parseInt(process.env.STALE_AUDIT_MINUTES || "5", 10);
   const cutoff = new Date(Date.now() - maxMinutes * 60_000).toISOString();
 
   let query = supabase
