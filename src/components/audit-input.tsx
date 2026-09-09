@@ -344,7 +344,17 @@ export function AuditInput() {
         ))}
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-3">
+      {/* URL is the default and primary path, and it is a single short field:
+          on a wide surface it reads as one row, field then action. Every other
+          mode carries a file picker or extra controls, so those stay stacked. */}
+      <form
+        onSubmit={handleSubmit}
+        className={
+          mode === "url"
+            ? "flex flex-col gap-3 sm:flex-row sm:items-center"
+            : "space-y-3"
+        }
+      >
         {mode === "url" && (
           <Input
             type="url"
@@ -352,6 +362,7 @@ export function AuditInput() {
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             disabled={loading}
+            className="sm:flex-1"
           />
         )}
         {mode === "figma" && (
@@ -413,7 +424,7 @@ export function AuditInput() {
           </label>
         )}
 
-        <Button type="submit" disabled={loading} className="w-full sm:w-auto">
+        <Button type="submit" disabled={loading} className="w-full shrink-0 sm:w-auto">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {loading ? "Working…" : mode === "url" || mode === "pdf" ? "Audit" : "Analyze"}
         </Button>

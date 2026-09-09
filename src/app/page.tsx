@@ -28,24 +28,16 @@ const MATRIX_FILL: Record<(typeof MATRIX_STATES)[number], string> = {
 
 const DELIVERABLES = [
   {
-    title: "The screenshot that proves it",
-    body: "Every finding carries a cropped capture of the element that failed, taken during the scan. If the element sits outside the capture, you get no crop rather than a convincing wrong one.",
-  },
-  {
-    title: "The criterion, not a rule name",
-    body: "1.4.3 Contrast (Minimum), Level AA, with the measured ratio and the ratio it needed. Mapped from the registry, not guessed from tag order.",
+    title: "Evidence, not a rule name",
+    body: "The crop from the scan, the criterion (1.4.3 Contrast (Minimum), AA), the measured ratio against the one required, and the fix. No crop beats a wrong crop.",
   },
   {
     title: "A matrix across all 87 criteria",
-    body: "Passed, failed, needs review, or not tested. A criterion nobody tested is never reported as passed, even when the module covering it was switched off.",
+    body: "Passed, failed, needs review, not tested. Nothing untested is ever reported as passed.",
   },
   {
-    title: "A 16:9 PDF and an ACR/VPAT export",
-    body: "The artifacts procurement asks for, with an evidence appendix: one finding per printed page, screenshot attached.",
-  },
-  {
-    title: "W3C maturity scoring",
-    body: "Where the organisation sits across the W3C Accessibility Maturity Model, so a page fix and a process gap do not look the same.",
+    title: "A 16:9 PDF, a VPAT 2.5, a maturity score",
+    body: "One finding per printed page with its screenshot, scored across governance, design, dev, QA and ops.",
   },
 ];
 
@@ -53,32 +45,32 @@ const INPUTS = [
   {
     key: "URL",
     name: "A live site",
-    body: "Crawls up to five pages, runs axe-core, walks the keyboard order, checks reflow at mobile and tablet widths, and captures evidence as it goes.",
+    body: "Crawls up to 5 pages: axe-core 4.13, keyboard order, reflow at 375 and 768, evidence crops.",
   },
   {
     key: "FIG",
     name: "A Figma file",
-    body: "Reads the real frames over the REST API: contrast pairs, touch-target sizes, and images with no description. Connect your own account, or paste a share link.",
+    body: "Frames over the REST API: contrast pairs, touch targets, images with no description. Connect an account or paste a link.",
   },
   {
     key: "IMG",
     name: "A UI screenshot",
-    body: "Deterministic element detection first, then a vision model that may only suggest. Its output lands in needs review and never becomes a failure.",
+    body: "Element detection first, then vision-model suggestions that stay advisory.",
   },
   {
     key: "PDF",
     name: "A PDF document",
-    body: "PDF/UA and WCAG structure: tags, reading order, language, alt text, and whether the file is a scan of a page rather than a document.",
+    body: "PDF/UA structure up to 25MB: tags, reading order, language, alt text, and scans posing as documents.",
   },
   {
     key: "APK",
     name: "An Android package",
-    body: "Static manifest analysis, and with an emulator on the machine, live checks against the running UI hierarchy for labels, target size, and contrast.",
+    body: "aapt2 manifest analysis, plus live checks for labels, target size and contrast when an emulator is running.",
   },
   {
     key: "IPA",
     name: "An iOS bundle",
-    body: "Info.plist and asset inspection, plus a guided VoiceOver checklist for the dynamic half, because that genuinely requires a Mac.",
+    body: "Info.plist and asset inspection, plus a guided VoiceOver checklist for the dynamic half.",
   },
 ];
 
@@ -131,19 +123,19 @@ const COMPARISON = [
 const LIMITS = [
   {
     claim: "Automated testing cannot certify conformance.",
-    body: "It catches a subset. The criteria a machine cannot judge are surfaced as a guided checklist for a human, not quietly marked passed.",
+    body: "It catches a subset. The rest becomes a guided checklist for a human, never a silent pass.",
   },
   {
     claim: "Vision models never create a finding.",
-    body: "They suggest, into a needs-review bucket, labelled as advisory. Contrast is measured with deterministic colour maths, not asked of a model.",
+    body: "They suggest, into needs review, labelled advisory. Contrast is deterministic colour maths.",
   },
   {
     claim: "iOS dynamic testing needs macOS.",
-    body: "No tool on Windows or Linux can drive the iOS Simulator. You get static bundle analysis and a VoiceOver checklist to run on a Mac, instead of an invented result.",
+    body: "Nothing on Windows or Linux can drive the iOS Simulator. You get static bundle analysis and a Mac checklist.",
   },
   {
     claim: "Sites behind a bot wall will not scan.",
-    body: "A challenge page is reported as blocked, with the reason. Defeating bot detection is not something this tool tries to do.",
+    body: "The challenge page is reported as blocked, with the reason, not as a clean pass.",
   },
 ];
 
@@ -310,8 +302,8 @@ export default function Home() {
       </header>
 
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section className="mx-auto w-full max-w-6xl px-6 pb-16 pt-10 sm:pt-14">
-        <div className="grid gap-x-12 gap-y-14 lg:grid-cols-12">
+      <section className="mx-auto w-full max-w-6xl px-6 pb-12 pt-10 sm:pt-14">
+        <div className="grid gap-x-12 gap-y-12 lg:grid-cols-12">
           <div className="lg:col-span-7">
             <h1 className="text-[clamp(2.5rem,6.4vw,4.75rem)] font-semibold leading-[0.98] tracking-[-0.035em]">
               {["Every failure,", "with the proof", "attached."].map((line) => (
@@ -325,32 +317,39 @@ export default function Home() {
 
             <p
               data-anim="hero-sub"
-              className="mt-8 max-w-[58ch] text-[1.125rem] leading-relaxed text-[var(--ink-soft)]"
+              className="mt-7 max-w-[52ch] text-[1.125rem] leading-relaxed text-[var(--ink-soft)]"
             >
-              Point it at a site, a Figma file, a screenshot, a PDF, or a mobile
-              build. You get back the element that failed, the success criterion
-              it breaks, the measurement behind the verdict, and the change that
-              fixes it.
+              Site, Figma file, screenshot, PDF, Android or iOS build: you get
+              the element that failed, the criterion it breaks, and the fix.
             </p>
-
-            <div data-anim="hero-cta" className="mt-10">
-              <div className="rounded-lg border border-[var(--rule-strong)] bg-[var(--paper-sunk)] p-5">
-                <AuditInput />
-              </div>
-              <p className="mt-4 font-mono text-[11px] leading-relaxed text-[var(--ink-faint)]">
-                Five audits a day without an account. Reports, evidence and Figma
-                authorizations delete themselves within 24 hours.
-              </p>
-            </div>
           </div>
 
-          <div className="lg:col-span-5 lg:pt-3">
+          <div className="lg:col-span-5 lg:pt-1">
             <Specimen />
-            <p className="mt-4 max-w-[42ch] text-[13px] leading-relaxed text-[var(--ink-faint)]">
-              One finding, as the workbench renders it. The crop, the criterion,
-              the measured ratio, and the fix.
+            <p className="mt-3 max-w-[42ch] text-[13px] leading-relaxed text-[var(--ink-faint)]">
+              One finding, as the workbench renders it.
             </p>
           </div>
+        </div>
+      </section>
+
+      {/* ── The audit bar ────────────────────────────────────────────────────
+          Deliberately wears the same ring the Specimen puts around a failing
+          element. The page's one signal colour marks the thing to act on, so
+          the primary action and the product's own output speak the same
+          visual language instead of competing. */}
+      <section className="mx-auto w-full max-w-6xl px-6 pb-20">
+        <div
+          data-anim="hero-cta"
+          className="rounded-xl border-2 border-[var(--flag)] bg-[var(--flag)]/10 p-5 sm:p-7"
+        >
+          <div className="mb-5 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+            <h2 className="text-base font-medium tracking-[-0.01em]">Start an audit</h2>
+            <p className="font-mono text-[11px] text-[var(--ink-soft)]">
+              Five a day without an account. Everything deletes itself in 24 hours.
+            </p>
+          </div>
+          <AuditInput />
         </div>
       </section>
 
@@ -365,11 +364,7 @@ export default function Home() {
 
       {/* ── 01 What comes back ───────────────────────────────────────────── */}
       <section className="mx-auto w-full max-w-6xl px-6 pb-28">
-        <SectionHead
-          n="01"
-          title="What comes back"
-          lede="An audit is only useful if someone can act on it and someone else can check it. Every finding is built to survive both."
-        />
+        <SectionHead n="01" title="What comes back" />
 
         <SectionBody className="grid gap-x-12 gap-y-16 lg:grid-cols-12">
           <dl data-stagger className="lg:col-span-7">
@@ -427,11 +422,7 @@ export default function Home() {
 
       {/* ── 02 Ways in ───────────────────────────────────────────────────── */}
       <section className="mx-auto w-full max-w-6xl px-6 pb-28">
-        <SectionHead
-          n="02"
-          title="Six ways in"
-          lede="Accessibility debt does not live in one place. Neither should the tool that finds it."
-        />
+        <SectionHead n="02" title="Six ways in" />
 
         <div className="relative pl-6 sm:pl-[var(--gutter)]">
           <div
@@ -469,7 +460,7 @@ export default function Home() {
         <SectionHead
           n="03"
           title="One place to work through it"
-          lede="Findings arrive in a two-column workbench: the page on one side, the WCAG 2.2 checklist on the other, with three modes over the same audit."
+          lede="Three modes over one audit: the page on one side, the WCAG 2.2 checklist on the other."
         />
         <SectionBody>
         <dl
@@ -479,15 +470,15 @@ export default function Home() {
           {[
             [
               "Checklist",
-              "Every criterion by principle, with its findings, evidence and current verdict. Filter to what a given module actually covered.",
+              "Every criterion by principle, with findings, evidence and verdict, filterable to what each module covered.",
             ],
             [
               "Inspect",
-              "Click any element in the live preview for its computed contrast, touch-target size and accessible name. Simulate colour vision deficiency, larger text, reduced motion.",
+              "Click any element for its contrast, target size and accessible name; simulate colour vision deficiency, larger text, reduced motion.",
             ],
             [
               "Screen reader",
-              "A deterministic transcript built from the accessibility tree, read aloud in the browser. No screen reader to install, and it works the same for everyone on the deployment.",
+              "A transcript built from the accessibility tree, read aloud in the browser, nothing to install.",
             ],
           ].map(([title, body]) => (
             <div key={title} className="bg-[var(--paper)] p-6">
@@ -506,7 +497,7 @@ export default function Home() {
         <SectionHead
           n="04"
           title="How it compares"
-          lede="The automated engine is axe-core, the same engine inside axe DevTools, Lighthouse and Accessibility Insights, so a finding here carries the weight it would there. What changes is how many tools you need around it."
+          lede="Same axe-core engine as axe DevTools, Lighthouse and Accessibility Insights. What changes is how many tools you need around it."
         />
         <SectionBody>
         {/* A horizontally scrollable region must be reachable by keyboard
@@ -561,19 +552,15 @@ export default function Home() {
           </table>
         </div>
         <p className="mt-4 max-w-[70ch] text-[13px] leading-relaxed text-[var(--ink-faint)]">
-          Prices are the vendors&apos; published list rates and change often. The
-          point of the row is coverage per tool, not the number.
+          Published list prices, which move; the column that matters is
+          coverage.
         </p>
         </SectionBody>
       </section>
 
       {/* ── 05 Limits ────────────────────────────────────────────────────── */}
       <section className="mx-auto w-full max-w-6xl px-6 pb-28">
-        <SectionHead
-          n="05"
-          title="What it will not do"
-          lede="A tool that overstates what it checked is worse than no tool, because someone ships on it. These are the limits, in the product and in the report."
-        />
+        <SectionHead n="05" title="What it will not do" />
         <SectionBody>
         <dl data-stagger className="grid gap-x-12 gap-y-8 sm:grid-cols-2">
           {LIMITS.map((l) => (
@@ -594,9 +581,8 @@ export default function Home() {
         <SectionBody className="grid gap-x-12 gap-y-10 lg:grid-cols-12">
           <div className="lg:col-span-7">
             <p className="max-w-[64ch] text-[1.0625rem] leading-relaxed text-[var(--ink-soft)]">
-              MIT licensed, and every engine in the audit path is open source, so
-              nothing about a verdict is hidden behind a vendor. If you disagree
-              with a finding you can go and read the check that produced it.
+              MIT licensed, with every engine in the audit path open source.
+              Disagree with a finding and you can read the check that produced it.
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
               <a
