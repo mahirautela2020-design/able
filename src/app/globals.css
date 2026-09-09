@@ -60,7 +60,9 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  /* 0.556 measured 4.34:1 against --muted, just under AA for body text.
+     Every muted label in the app rides on this token. */
+  --muted-foreground: oklch(0.5 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
@@ -115,6 +117,44 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* Landing-surface palette. Scoped to [data-surface="landing"] so the marketing
+   page can commit to a voice without shifting the app's neutral tokens.
+   Strategy: warm paper + near-black ink, with one signal colour. The signal is
+   a highlighter yellow because that is literally what the product does, mark
+   the failing region on a page. It only ever appears behind dark ink or as a
+   rule, so it clears AAA contrast on a page that had better pass its own
+   audit. */
+@layer base {
+  [data-surface="landing"] {
+    --paper: oklch(0.988 0.004 85);
+    --paper-sunk: oklch(0.965 0.006 85);
+    --ink: oklch(0.17 0.008 85);
+    --ink-soft: oklch(0.47 0.006 85);
+    /* Held at the lightness that still clears 4.5:1 on --paper-sunk, the
+       darkest ground it ever sits on. Verified by running axe-core against
+       this page; the earlier 0.63 measured 3.38:1. */
+    --ink-faint: oklch(0.51 0.006 85);
+    --rule: oklch(0.9 0.006 85);
+    --rule-strong: oklch(0.78 0.008 85);
+    --flag: oklch(0.87 0.17 96);
+    --flag-ink: oklch(0.28 0.06 90);
+    --fail: oklch(0.55 0.2 27);
+  }
+
+  .dark [data-surface="landing"] {
+    --paper: oklch(0.16 0.006 85);
+    --paper-sunk: oklch(0.21 0.006 85);
+    --ink: oklch(0.97 0.004 85);
+    --ink-soft: oklch(0.72 0.005 85);
+    --ink-faint: oklch(0.66 0.005 85);
+    --rule: oklch(0.31 0.006 85);
+    --rule-strong: oklch(0.42 0.008 85);
+    --flag: oklch(0.83 0.16 96);
+    --flag-ink: oklch(0.2 0.05 90);
+    --fail: oklch(0.68 0.19 25);
+  }
 }
 
 @layer base {

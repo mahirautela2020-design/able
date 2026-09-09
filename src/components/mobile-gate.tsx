@@ -1,11 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const DISMISS_KEY = "able:mobile-gate-dismissed";
 const BREAKPOINT_PX = 768; // matches Tailwind's `md`, and resize_window's "mobile"/"tablet" presets
+
+/** Pages that are just content: the landing page, the legal pages, and the
+ * two install pages. Nothing here needs a wide viewport, so warning about one
+ * only blurs the pitch behind a modal for anyone arriving on a phone, which is
+ * how most links get opened. The gate exists for the workbench, so it stays
+ * on everywhere else; a new app route is gated by default. */
+const UNGATED_PATHS = ["/", "/privacy", "/terms", "/extension", "/figma-plugin"];
 
 /**
  * ScanA11y's workbench is a side-by-side, drag-to-resize desktop layout
@@ -18,8 +26,14 @@ const BREAKPOINT_PX = 768; // matches Tailwind's `md`, and resize_window's "mobi
  */
 export function MobileGate() {
   const [show, setShow] = useState(false);
+  const pathname = usePathname();
+  const gated = !UNGATED_PATHS.includes(pathname ?? "/");
 
   useEffect(() => {
+    // Nothing to subscribe to on an ungated page. Visibility is derived below
+    // rather than pushed into state here, so leaving a gated route cannot
+    // cascade an extra render.
+    if (!gated) return;
     function check() {
       const isNarrow = window.innerWidth < BREAKPOINT_PX;
       const dismissed = window.sessionStorage.getItem(DISMISS_KEY) === "1";
@@ -28,14 +42,14 @@ export function MobileGate() {
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
-  }, []);
+  }, [gated]);
 
   function dismiss() {
     window.sessionStorage.setItem(DISMISS_KEY, "1");
     setShow(false);
   }
 
-  if (!show) return null;
+  if (!gated || !show) return null;
 
   return (
     <div
