@@ -31,9 +31,21 @@ export async function captureAriaSnapshot(
 ): Promise<AriaNode | null> {
   try {
     const session = await page.context().newCDPSession(page);
-    const result = (await session.send("Accessibility.getFullAXTree")) as {
-      nodes?: AxTreeNode[];
-    };
+    // Detach as soon as the tree is in hand. This session used to be left
+    // open for the life of the page context -- one leaked CDP session per
+    // audited page. (ax-tree.ts already detaches its own.)
+    let result: { nodes?: AxTreeNode[] };
+    try {
+      result = (await session.send("Accessibility.getFullAXTree")) as {
+        nodes?: AxTreeNode[];
+      };
+    } finally {
+      try {
+        await session.detach();
+      } catch {
+        // Best-effort: the page or context may already be gone.
+      }
+    }
     const nodes = result.nodes ?? [];
     if (nodes.length === 0) return null;
 

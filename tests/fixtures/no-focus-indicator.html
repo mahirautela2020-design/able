@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Focus ring removed</title>
+<style>
+  /* The classic 2.4.7 failure: the default ring is suppressed and nothing
+     replaces it. A stylesheet scan must not count this as an indicator. */
+  a:focus, button:focus { outline: none; }
+</style>
+</head>
+<body>
+  <h1>Focus ring removed</h1>
+  <a href="#one">One</a>
+  <button type="button">Two</button>
+</body>
+</html>

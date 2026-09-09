@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
       // Reuse the auditor's screenshot helper so the viewport (1440×900 from
       // withPage's default context) and the clip width agree — a mismatched
       // clip wider than the viewport can fail the capture.
-      const buffer = await takeScreenshot(page);
+      const { buffer } = await takeScreenshot(page);
       return { blocked: false as const, buffer };
     });
 

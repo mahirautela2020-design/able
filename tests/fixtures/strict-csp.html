@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="script-src 'none'">
+<title>Strict CSP</title>
+</head>
+<body>
+  <h1>Strict CSP</h1>
+  <!-- axe-core is injected as an inline script; script-src 'none' rejects it
+       unless the browser context is created with bypassCSP. -->
+  <img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==">
+  <a href="#x"></a>
+</body>
+</html>

@@ -58,6 +58,12 @@ export interface Finding {
   engine_version: string | null;
 }
 
+/** How many nodes per axe rule become their own Finding; the rest are rolled
+ * up into `additional_instances`. Exported because axe-scan.ts resolves
+ * bounding boxes for exactly these nodes and no more — resolving all of them
+ * meant ~14x the selector lookups for boxes nothing ever read. */
+export const BBOX_NODE_LIMIT = 4;
+
 export function extractFindings(
   result: AxeResult,
   axeVersion: string,
@@ -88,8 +94,11 @@ export function extractFindings(
       minor: "minor",
     };
 
-    const nodesToProcess = violation.nodes.slice(0, 4);
-    const additionalInstances = Math.max(0, violation.nodes.length - 4);
+    const nodesToProcess = violation.nodes.slice(0, BBOX_NODE_LIMIT);
+    const additionalInstances = Math.max(
+      0,
+      violation.nodes.length - BBOX_NODE_LIMIT
+    );
 
     for (let i = 0; i < nodesToProcess.length; i++) {
       const node = nodesToProcess[i];

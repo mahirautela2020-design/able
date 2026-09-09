@@ -11,6 +11,7 @@ import { captureAxTree } from "@/engine/ax-tree";
 import { runAxChecks } from "@/engine/ax-checks";
 import { axTreeToTranscript } from "@/engine/sr-speech";
 import { scanResponsive } from "@/engine/responsive-scan";
+import { cropRectFor } from "@/engine/evidence-crop";
 import { resolveModuleIds, resolveModuleGates, getModuleWcagCoverage } from "@/lib/audit-modules";
 import {
   getAudit,
@@ -133,6 +134,7 @@ export const auditUrl = inngest.createFunction(
 
       await step.run(`scan-page-${i}`, async () => {
         let pageId = "";
+        let scanError: string | null = null;
         const telemetry = { networkidleTimedOut: false };
 
         // Per-page hard deadline: a pathological page (heavy JS, endless
@@ -140,6 +142,12 @@ export const auditUrl = inngest.createFunction(
         // failed page row and continue with the next page.
         const scanOutcome = await withDeadline(
           withPage(async (page) => {
+            // NOTE: everything below is wrapped by the .catch() attached to
+            // this withPage() call. A throw here (dead host, 404, navigation
+            // timeout, a page that breaks axe) used to escape all the way to
+            // Inngest, which retried once and then marked the ENTIRE audit
+            // failed -- so one unreachable page in a five-page crawl meant no
+            // report at all, including for the four pages that scanned fine.
             await page.goto(pageUrl, {
               waitUntil: "domcontentloaded",
               timeout: 20_000,
@@ -199,7 +207,7 @@ export const auditUrl = inngest.createFunction(
           }
 
           let srSnapshot = null;
-          let srAnnouncements: Array<{ text: string; timestamp: number; source: string }> = [];
+          let srAnnouncements: Awaited<ReturnType<typeof captureLiveAnnouncements>> = [];
           if (gates.axTree) {
             try {
               srSnapshot = await captureAriaSnapshot(page);
@@ -270,7 +278,17 @@ export const auditUrl = inngest.createFunction(
               settled_at_ms: null,
               networkidle_timed_out: telemetry.networkidleTimedOut,
               error_code: null,
-              evidence: { telemetry, keyboardCount: keyboardResult.focusableCount, sr: srEvidence },
+              evidence: {
+                telemetry,
+                keyboardCount: keyboardResult.focusableCount,
+                sr: srEvidence,
+                screenshot: {
+                  width: screenshot.width,
+                  height: screenshot.height,
+                  documentHeight: screenshot.documentHeight,
+                  truncated: screenshot.truncated,
+                },
+              },
               scanned_at: new Date().toISOString(),
             });
 
@@ -279,16 +297,18 @@ export const auditUrl = inngest.createFunction(
           const evidencePath = `${auditId}/${i}`;
           const fullScreenshotPath = `${evidencePath}-full.webp`;
 
+          // takeScreenshot reports the real captured size. The old code
+          // hardcoded 1440x20000 as the fallback, so when the webp encode
+          // threw (which it did on every page taller than 16383px) every
+          // crop was clamped against dimensions the image never had.
+          const screenshotWidth = screenshot.width;
+          const screenshotHeight = screenshot.height;
+
           let fullScreenshotUrl: string | null = null;
-          let screenshotWidth = 1440;
-          let screenshotHeight = 20000;
           try {
-            const webpScreenshot = await sharp(screenshot)
+            const webpScreenshot = await sharp(screenshot.buffer)
               .webp({ quality: 80 })
               .toBuffer();
-            const metadata = await sharp(webpScreenshot).metadata();
-            screenshotWidth = metadata.width || 1440;
-            screenshotHeight = metadata.height || 20000;
             fullScreenshotUrl = await uploadEvidence(
               webpScreenshot,
               fullScreenshotPath
@@ -299,28 +319,21 @@ export const auditUrl = inngest.createFunction(
 
           const cropUploads: Promise<string | null>[] = [];
           for (const f of allFindingsForPage) {
-            if (f.bbox) {
+            // cropRectFor returns null when the finding sits outside the
+            // captured image -- see evidence-crop.ts for why that beats
+            // clamping it into a plausible-looking wrong crop.
+            const crop = f.bbox
+              ? cropRectFor(f.bbox, screenshotWidth, screenshotHeight)
+              : null;
+            if (crop) {
+              const { left, top, width, height } = crop;
               const cropPath = `${evidencePath}-${f.rule_id}-${Math.random().toString(36).slice(2, 8)}.webp`;
-              // sharp.extract requires integers within the image bounds —
-              // bboxes are float (CSS pixels), so round + clamp everything.
-              const left = Math.min(
-                Math.max(0, Math.round(f.bbox.x - 30)),
-                screenshotWidth - 1
-              );
-              const top = Math.min(
-                Math.max(0, Math.round(f.bbox.y - 30)),
-                screenshotHeight - 1
-              );
-              const width = Math.max(
-                1,
-                Math.min(screenshotWidth - left, Math.round(f.bbox.width + 60))
-              );
-              const height = Math.max(
-                1,
-                Math.min(screenshotHeight - top, Math.round(f.bbox.height + 60))
-              );
               cropUploads.push(
-                sharp(screenshot)
+                // Deliberately re-decoding the PNG per crop: decoding once
+                // into a raw buffer measured 2.5x faster but +46MB peak RSS
+                // (a full-page raw RGB buffer), which is the wrong trade on a
+                // memory-capped serverless worker. Cost is ~35ms/crop.
+                sharp(screenshot.buffer)
                   .extract({ left, top, width, height })
                   .webp({ quality: 80 })
                   .toBuffer()
@@ -372,12 +385,18 @@ export const auditUrl = inngest.createFunction(
             },
             wcagScore: matrix.wcagScore,
           };
+          }).catch((err: unknown) => {
+            scanError = err instanceof Error ? err.message : String(err);
+            return "SCAN_ERROR" as const;
           }),
           PAGE_SCAN_TIMEOUT_MS
         );
 
-        // Handle per-page timeout: record the page as failed, keep going.
-        if (scanOutcome === "TIMEOUT") {
+        // Handle per-page timeout or failure: record the page as failed and
+        // keep going, so the audit still produces a report from the pages
+        // that did scan.
+        if (scanOutcome === "TIMEOUT" || scanOutcome === "SCAN_ERROR") {
+          const timedOut = scanOutcome === "TIMEOUT";
           try {
             await insertAuditPage({
               audit_id: auditId,
@@ -388,9 +407,11 @@ export const auditUrl = inngest.createFunction(
               axe_version: null,
               consent_dismissed: null,
               settled_at_ms: null,
-              networkidle_timed_out: true,
-              error_code: "PAGE_SCAN_TIMEOUT",
-              evidence: { timeoutMs: PAGE_SCAN_TIMEOUT_MS },
+              networkidle_timed_out: timedOut,
+              error_code: timedOut ? "PAGE_SCAN_TIMEOUT" : "PAGE_SCAN_ERROR",
+              evidence: timedOut
+                ? { timeoutMs: PAGE_SCAN_TIMEOUT_MS }
+                : { error: scanError },
               scanned_at: null,
             });
           } catch {

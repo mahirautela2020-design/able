@@ -1,9 +1,10 @@
 import { readFileSync } from "fs";
 import path from "path";
 import type { Page } from "playwright-core";
-import { takeScreenshot } from "./browser";
+import { takeScreenshot, type ScreenshotResult } from "./browser";
 import {
   extractFindings,
+  BBOX_NODE_LIMIT,
   type AxeResult,
   type AxeViolation,
   type AxeNode,
@@ -25,7 +26,7 @@ declare global {
 export interface ScanResult {
   findings: Finding[];
   axeVersion: string;
-  screenshot: Buffer;
+  screenshot: ScreenshotResult;
 }
 
 // The `automated` module (src/lib/audit-modules.ts) advertises coverage of
@@ -68,6 +69,8 @@ export async function runAxe(page: Page): Promise<ScanResult> {
   ]);
 
   const axeVersion = axeResult.testEngine?.version || "unknown";
+  // Must run before anything that scrolls or resizes the page: resolveBboxes
+  // records document coordinates that are only comparable to this capture.
   const screenshot = await takeScreenshot(page);
 
   const bboxes = await resolveBboxes(page, axeResult);
@@ -81,11 +84,15 @@ async function resolveBboxes(
   page: Page,
   result: AxeResult
 ): Promise<Map<string, { x: number; y: number; width: number; height: number }>> {
+  // extractFindings only ever emits the first BBOX_NODE_LIMIT nodes per rule
+  // (finding-mapping.ts), so resolving every node was pure waste — 601
+  // selector lookups on a Wikipedia article to fill 44 findings. Slicing here
+  // keeps the two in step; raising the limit there means raising it here.
   const allTargets = [
     ...result.violations,
     ...result.incomplete,
   ].flatMap((v) =>
-    v.nodes.map((n) => ({ ruleId: v.id, target: n.target }))
+    v.nodes.slice(0, BBOX_NODE_LIMIT).map((n) => ({ ruleId: v.id, target: n.target }))
   );
 
   const bboxMap = new Map<
@@ -98,7 +105,7 @@ async function resolveBboxes(
     key: `${t.ruleId}-${t.target.join(" ")}`,
   }));
 
-  await page.evaluate(({ targets }) => {
+  const resolved = await page.evaluate(({ targets }) => {
     window.__ableBboxes = {};
     for (const { selector, key } of targets) {
       try {
@@ -123,9 +130,14 @@ async function resolveBboxes(
         }
         if (el) {
           const rect = el.getBoundingClientRect();
+          // getBoundingClientRect is VIEWPORT-relative; the screenshot these
+          // crops are cut from is document-relative. They only agree while
+          // scroll is at the origin, which is true today but is an invisible
+          // invariant — adding the scroll offset makes the coordinate space
+          // explicit and survives anything that scrolls before this runs.
           window.__ableBboxes[key] = {
-            x: rect.x,
-            y: rect.y,
+            x: rect.x + window.scrollX,
+            y: rect.y + window.scrollY,
             width: rect.width,
             height: rect.height,
           };
@@ -134,13 +146,12 @@ async function resolveBboxes(
         window.__ableBboxes[key] = null;
       }
     }
+    // Returning the map directly saves a second CDP round-trip that existed
+    // only to read this same global back out.
+    return window.__ableBboxes;
   }, { targets });
 
-  const resolved = await page.evaluate(
-    () => window.__ableBboxes || {}
-  );
-
-  for (const [key, val] of Object.entries(resolved)) {
+  for (const [key, val] of Object.entries(resolved ?? {})) {
     if (val) bboxMap.set(key, val as { x: number; y: number; width: number; height: number });
   }
 

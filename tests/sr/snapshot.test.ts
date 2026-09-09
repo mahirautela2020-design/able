@@ -1,12 +1,16 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { captureAriaSnapshot } from "@/lib/sr/snapshot";
 
 type PageArg = Parameters<typeof captureAriaSnapshot>[0];
 
-function mockPage(nodes: unknown[]): PageArg {
-  const session = {
-    send: async () => ({ nodes }),
+function mockSession(nodes: unknown[]) {
+  return {
+    send: vi.fn(async () => ({ nodes })),
+    detach: vi.fn(async () => {}),
   };
+}
+
+function mockPage(nodes: unknown[], session = mockSession(nodes)): PageArg {
   return {
     context: () => ({ newCDPSession: async () => session }),
   } as unknown as PageArg;
@@ -75,5 +79,26 @@ describe("sr/snapshot", () => {
     expect(result!.children).toHaveLength(1);
     expect(result!.children[0].role).toBe("button");
     expect(result!.children[0].name).toBe("Go");
+  });
+
+  it("detaches the CDP session once the tree is captured", async () => {
+    // One leaked CDP session per audited page otherwise: this session used to
+    // stay open for the life of the browser context.
+    const session = mockSession([
+      { nodeId: "1", role: { value: "RootWebArea" }, name: { value: "Test Page" } },
+    ]);
+    await captureAriaSnapshot(mockPage([], session));
+    expect(session.detach).toHaveBeenCalledTimes(1);
+  });
+
+  it("still detaches when the tree request fails", async () => {
+    const session = {
+      send: vi.fn(async () => {
+        throw new Error("cdp send failed");
+      }),
+      detach: vi.fn(async () => {}),
+    };
+    expect(await captureAriaSnapshot(mockPage([], session))).toBeNull();
+    expect(session.detach).toHaveBeenCalledTimes(1);
   });
 });

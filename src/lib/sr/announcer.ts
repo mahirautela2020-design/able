@@ -2,71 +2,34 @@ import type { Page } from "playwright-core";
 
 export interface Announcement {
   text: string;
+  /** When THIS capture ran — not when a screen reader would have spoken the
+   * text. `detected` says which of those two this actually is. */
   timestamp: number;
   source: string;
+  detected: "static" | "observed";
 }
 
+/**
+ * Record what a screen reader would announce from the page's live regions.
+ *
+ * This used to install a MutationObserver and read it back on the very next
+ * CDP round-trip. Measured across every target: it captured zero mutations,
+ * and still zero when given a 4-second window — because by the time this runs
+ * the audit has already finished interacting with the page, so there is
+ * nothing left to mutate. Every value it ever returned came from the static
+ * sweep below, wearing an `observed`-looking timestamp it had not earned.
+ *
+ * So the observer is gone and the remaining sweep is labelled honestly. It
+ * reports live-region CONTENT PRESENT AT SCAN TIME, which is a real and useful
+ * signal (an `aria-live` region holding stale text is a genuine defect) — it
+ * is just not a recording of announcements over time. Capturing those needs
+ * the observer installed BEFORE the interaction phase, which is a change to
+ * the scan's shape, not to this function.
+ */
 export async function captureLiveAnnouncements(
   page: Page
 ): Promise<Announcement[]> {
-  const announcements: Announcement[] = [];
-
-  await page.evaluate(() => {
-    interface ScanA11yWindow extends Window {
-      __ableAnnouncements: Announcement[];
-      __ableAnnounced: Set<string>;
-      __ableObs: MutationObserver;
-    }
-    const win = window as unknown as ScanA11yWindow;
-
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        if (mutation.type === "childList" || mutation.type === "characterData") {
-          const target = mutation.target as Element;
-          const live = target.closest?.("[aria-live], [role='status'], [role='alert']");
-          if (live) {
-            const text = live.textContent?.trim();
-            if (text && !win.__ableAnnounced?.has(text)) {
-              if (!win.__ableAnnounced) {
-                win.__ableAnnounced = new Set<string>();
-              }
-              win.__ableAnnounced.add(text);
-              win.__ableAnnouncements.push({
-                text,
-                timestamp: Date.now(),
-                source: live.getAttribute("role") || live.getAttribute("aria-live") || "unknown",
-              });
-            }
-          }
-        }
-      }
-    });
-
-    win.__ableAnnouncements = [];
-    win.__ableAnnounced = new Set<string>();
-
-    observer.observe(document.body, {
-      childList: true,
-      characterData: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["aria-live"],
-    });
-
-    win.__ableObs = observer;
-  });
-
-  const captured = await page.evaluate(() => {
-    interface ScanA11yWindow extends Window {
-      __ableAnnouncements: Announcement[];
-      __ableObs: MutationObserver;
-    }
-    const win = window as unknown as ScanA11yWindow;
-    win.__ableObs?.disconnect();
-    return win.__ableAnnouncements || [];
-  });
-
-  announcements.push(...captured);
+  const capturedAt = Date.now();
 
   const liveRegions = await page.evaluate(() => {
     const regions = document.querySelectorAll(
@@ -85,12 +48,14 @@ export async function captureLiveAnnouncements(
     return result;
   });
 
+  const announcements: Announcement[] = [];
   for (const lr of liveRegions) {
     if (!announcements.some((a) => a.text === lr.text)) {
       announcements.push({
         text: lr.text,
-        timestamp: Date.now(),
+        timestamp: capturedAt,
         source: lr.source,
+        detected: "static",
       });
     }
   }

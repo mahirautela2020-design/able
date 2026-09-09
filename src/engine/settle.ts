@@ -1,5 +1,15 @@
 import type { Page } from "playwright-core";
 
+/** Grace period after fonts resolve, so the first paint with final metrics
+ * lands before the screenshot. Was an unconditional 1s on every page — 5s
+ * across a 5-page audit — with nothing measured depending on the extra time;
+ * networkidle and fonts.ready already cover the cases that matter. */
+const FINAL_PAINT_MS = 300;
+
+/** Wait after a consent banner is dismissed, for the overlay teardown/reflow
+ * that follows. Also previously over-generous at 1.5s. */
+const CONSENT_TEARDOWN_MS = 700;
+
 export async function dismissConsentIfPresent(page: Page): Promise<boolean> {
   try {
     const dismissed = await page.evaluate(() => {
@@ -23,7 +33,7 @@ export async function dismissConsentIfPresent(page: Page): Promise<boolean> {
       return false;
     });
     if (dismissed) {
-      await page.waitForTimeout(1500);
+      await page.waitForTimeout(CONSENT_TEARDOWN_MS);
     }
     return dismissed;
   } catch {
@@ -66,5 +76,5 @@ export async function waitForPageSettle(
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await page.evaluate(() => (document as any).fonts?.ready).catch(() => {});
-  await page.waitForTimeout(1_000);
+  await page.waitForTimeout(FINAL_PAINT_MS);
 }
