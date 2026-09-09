@@ -334,14 +334,12 @@ export default function Home() {
       </section>
 
       {/* ── The audit bar ────────────────────────────────────────────────────
-          Deliberately wears the same ring the Specimen puts around a failing
-          element. The page's one signal colour marks the thing to act on, so
-          the primary action and the product's own output speak the same
-          visual language instead of competing. */}
+          White card lifted off the paper with shadow alone, no colour ring:
+          the elevation itself says "this is the thing to act on". */}
       <section className="mx-auto w-full max-w-6xl px-6 pb-20">
         <div
           data-anim="hero-cta"
-          className="rounded-xl border-2 border-[var(--flag)] bg-[var(--flag)]/10 p-5 sm:p-7"
+          className="rounded-xl border border-[var(--rule-strong)] bg-[var(--paper)] p-5 shadow-[0_1px_2px_-1px_oklch(0.2_0.02_85/0.08),0_16px_40px_-20px_oklch(0.2_0.02_85/0.28)] sm:p-7"
         >
           <div className="mb-5 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
             <h2 className="text-base font-medium tracking-[-0.01em]">Start an audit</h2>
