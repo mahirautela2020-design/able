@@ -21,11 +21,17 @@ export function mapFigmaError(message: string): { status: number; error: string 
     const friendly =
       status === 404
         ? "Figma file not found — check the file key or share URL."
-        : status === 403
-          ? "Access denied — you don't have permission to view this Figma file, or the PAT/OAuth token has expired."
-          : status === 429
-            ? "Figma API rate limit reached — try again shortly."
-            : `Figma API error (${status}) — the file may be inaccessible right now.`;
+        : // A 401 from Figma means the token we sent was rejected, not that the
+          // caller is signed out of Able. Without this arm the bare 401 fell
+          // through to the client, which reads any 401 as "sign in" — turning
+          // an expired server-side token into a login error the user cannot fix.
+          status === 401
+          ? "Figma rejected the token — it has expired or been revoked. Reconnect your Figma account."
+          : status === 403
+            ? "Access denied — you don't have permission to view this Figma file, or the PAT/OAuth token has expired."
+            : status === 429
+              ? "Figma API rate limit reached — try again shortly."
+              : `Figma API error (${status}) — the file may be inaccessible right now.`;
     // 4xx from Figma is a client-fixable problem (bad key, no access), not
     // a server fault — surface it as a 502 (we're a proxy to their API)
     // rather than the misleading 500 this used to fall through to.
@@ -102,6 +108,10 @@ export async function POST(request: Request) {
     const textCount = collectTextNodes(nodeTree).length;
     const allFindings = [...contrastFindings, ...altFindings];
 
+    // Only the whole-file path can be cut short by the size guard; a
+    // node-scoped audit walks the subtree the caller asked for, in full.
+    const truncated = !nodeId && file.truncated;
+
     return Response.json({
       fileKey,
       nodeId: nodeId ?? null,
@@ -111,6 +121,15 @@ export async function POST(request: Request) {
         textNodes: textCount,
         contrastFindings: contrastFindings.length,
         altFindings: altFindings.length,
+        // Explicit, always present: "0 findings" means something very
+        // different depending on whether we saw the whole file.
+        truncated,
+        ...(truncated && {
+          truncationNote:
+            "This file was too large to fetch in full — only its top levels " +
+            "were audited, so these findings are incomplete. Audit individual " +
+            "frames by node id for full coverage.",
+        }),
       },
     });
   } catch (e) {

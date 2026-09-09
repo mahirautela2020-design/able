@@ -10,6 +10,16 @@ describe("mapFigmaError — figma audit route error → HTTP status mapping", ()
     });
   });
 
+  it("maps a 401 to an expired/revoked-token message, not a sign-in prompt", () => {
+    const result = mapFigmaError('Figma API error (401): {"err":"Token has expired"}');
+    expect(result?.status).toBe(401);
+    expect(result?.error).toMatch(/expired or been revoked/i);
+    expect(result?.error).toMatch(/reconnect your figma account/i);
+    // The bare 401 this used to return got rendered client-side as
+    // "Sign in to audit Figma files." — a login error for a token fault.
+    expect(result?.error).not.toMatch(/sign in/i);
+  });
+
   it("maps a 403 to an access-denied message", () => {
     const result = mapFigmaError("Figma API error (403): forbidden");
     expect(result?.status).toBe(403);

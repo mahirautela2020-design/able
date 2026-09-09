@@ -235,7 +235,13 @@ export function AuditInput() {
         if (!res.ok) {
           setResult({ error: data.error });
           if (res.status === 401) {
-            toast.error(session ? data.error : "Sign in to audit Figma files.");
+            // A 401 here is not always "you are signed out": it is also what
+            // Figma returns when OUR token is expired or revoked, and the
+            // route says so in data.error. Showing the sign-in prompt over
+            // that message sent people to a login page that could not fix it.
+            toast.error(
+              data.error || "Sign in to audit Figma files."
+            );
           }
           return;
         }
