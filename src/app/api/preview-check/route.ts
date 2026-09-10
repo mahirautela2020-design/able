@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { validateHostSync } from "@/lib/ssrf";
 
 /**
  * Checks whether a target URL allows iframe embedding, by inspecting its
@@ -21,8 +22,16 @@ export async function GET(request: NextRequest) {
     if (target.protocol !== "http:" && target.protocol !== "https:") {
       return NextResponse.json({ error: "Only http(s) URLs supported" }, { status: 400 });
     }
-  } catch {
-    return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
+    // Unlike preview-proxy/preview-proxy-asset (its siblings, same purpose:
+    // server-side fetch of a caller-supplied URL), this route had NO SSRF
+    // guard at all -- unauthenticated, no requireSession, and it does a
+    // real HEAD/GET against any http(s) URL, following redirects. That
+    // makes it a blind SSRF probe: an attacker gets back real signal
+    // (headers present vs. absent, timeout vs. immediate response, network
+    // error vs. success) for any internal host:port they supply.
+    validateHostSync(target.hostname);
+  } catch (e) {
+    return NextResponse.json({ error: `Invalid URL: ${(e as Error).message}` }, { status: 400 });
   }
 
   try {
@@ -57,6 +66,20 @@ export async function GET(request: NextRequest) {
         signal: AbortSignal.timeout(15000),
       });
       usedMethod = "GET";
+    }
+
+    // Both fetches above followed redirects; re-validate the FINAL location
+    // -- see preview-proxy/route.ts for why the pre-fetch check alone isn't
+    // enough once redirect: "follow" is in play.
+    try {
+      // See preview-proxy/route.ts: res.url is "" for a Response not
+      // produced by a real fetch navigation.
+      validateHostSync(new URL(res.url || target.href).hostname);
+    } catch (e) {
+      return NextResponse.json(
+        { error: `URL rejected after redirect: ${(e as Error).message}` },
+        { status: 400 }
+      );
     }
 
     const xfo = (res.headers.get("x-frame-options") || "").toUpperCase();

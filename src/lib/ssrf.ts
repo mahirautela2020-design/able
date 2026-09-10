@@ -117,9 +117,47 @@ export function parseGitUrl(raw: string): URL | null {
 }
 
 function isPrivateIp(ip: string): boolean {
+  // IPv6 literals arrive bracketed from URL.hostname ("[::1]") and
+  // unbracketed from dns.lookup()'s resolved addresses ("::1") -- strip
+  // brackets and route to the IPv6 matcher whenever a colon is present, so
+  // every caller of this function gets IPv6 coverage for free. Before this,
+  // isPrivateIp only recognized IPv4 dotted-decimal, so ::1, fe80::/10
+  // (link-local), fc00::/7 (unique-local), and IPv4-mapped IPv6
+  // (::ffff:127.0.0.1) all sailed straight through validateHostSync (the
+  // unauthenticated preview-proxy guard) and validateHost.
+  const unbracketed = ip.startsWith("[") && ip.endsWith("]") ? ip.slice(1, -1) : ip;
+  if (unbracketed.includes(":")) {
+    return isPrivateIpv6(unbracketed);
+  }
   if (ip === "169.254.169.254") return true;
   for (const range of PRIVATE_RANGES) {
     if (range.test(ip)) return true;
   }
+  return false;
+}
+
+function isPrivateIpv6(ip: string): boolean {
+  const lower = ip.toLowerCase();
+  if (lower === "::1" || lower === "0:0:0:0:0:0:0:1") return true; // loopback
+  if (lower === "::" || lower === "0:0:0:0:0:0:0:0") return true; // unspecified
+  if (/^fe[89ab][0-9a-f]:/.test(lower)) return true; // fe80::/10 link-local
+  if (/^f[cd][0-9a-f]{2}:/.test(lower)) return true; // fc00::/7 unique-local
+
+  // IPv4-mapped, dotted form (::ffff:a.b.c.d) -- rarely produced by
+  // URL.hostname but cheap to also accept.
+  const dottedMapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (dottedMapped) return isPrivateIp(dottedMapped[1]);
+
+  // IPv4-mapped, hex form -- what URL.hostname actually normalizes
+  // "[::ffff:127.0.0.1]" to ("[::ffff:7f00:1]"). Each group is up to 4 hex
+  // digits; recombine into the embedded IPv4 address and recurse.
+  const hexMapped = lower.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hexMapped) {
+    const hi = parseInt(hexMapped[1], 16);
+    const lo = parseInt(hexMapped[2], 16);
+    const addr = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+    return isPrivateIp(addr);
+  }
+
   return false;
 }

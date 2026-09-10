@@ -58,6 +58,25 @@ export async function GET(request: NextRequest) {
       signal: AbortSignal.timeout(15000),
     });
 
+    // validateHostSync above only checked the URL the caller supplied;
+    // `redirect: "follow"` means fetch may have landed somewhere else
+    // entirely, and a server that 3xx's to a private/metadata host would
+    // otherwise have its response relayed straight back to the caller with
+    // no re-check at all. res.url is the final, post-redirect location.
+    try {
+      // res.url is only populated by a real fetch that actually navigated;
+      // it's "" for a Response built directly (as tests do, and as some
+      // opaque/edge responses can be per spec) — fall back to the
+      // already-validated target rather than treating an empty string as
+      // an invalid redirect target.
+      validateHostSync(new URL(res.url || target.href).hostname);
+    } catch (e) {
+      return NextResponse.json(
+        { error: `URL rejected after redirect: ${(e as Error).message}` },
+        { status: 400 }
+      );
+    }
+
     if (!res.ok) {
       return NextResponse.json(
         { error: `Upstream ${res.status} ${res.statusText}` },

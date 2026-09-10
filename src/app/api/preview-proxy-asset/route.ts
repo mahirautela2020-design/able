@@ -67,6 +67,19 @@ async function relay(request: NextRequest, method: "GET" | "POST") {
       signal: AbortSignal.timeout(15000),
     });
 
+    // Re-validate post-redirect -- see preview-proxy/route.ts for why.
+    try {
+      // See preview-proxy/route.ts: res.url is "" for a Response not
+      // produced by a real fetch navigation; fall back to the
+      // already-validated target rather than rejecting that as invalid.
+      validateHostSync(new URL(res.url || target.href).hostname);
+    } catch (e) {
+      return NextResponse.json(
+        { error: `URL rejected after redirect: ${(e as Error).message}` },
+        { status: 400 }
+      );
+    }
+
     // 5MB cap — same guardrail as the document proxy.
     const buf = await res.arrayBuffer();
     if (buf.byteLength > 5_000_000) {

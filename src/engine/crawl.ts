@@ -126,10 +126,42 @@ export async function validateHost(hostname: string): Promise<void> {
 }
 
 function isPrivateIp(ip: string): boolean {
+  // dns.lookup() can return an AAAA (IPv6) record for a hostname with no
+  // IPv4 address at all -- PRIVATE_RANGES above is IPv4-only, so a
+  // DNS-rebinding attacker pointing a public-looking hostname at ::1,
+  // fe80::/10, fc00::/7, or an IPv4-mapped private address (::ffff:...)
+  // sailed straight through this check. See src/lib/ssrf.ts's isPrivateIp
+  // for the mirrored fix (this file duplicates that module rather than
+  // importing it -- a pre-existing structural issue, not addressed here).
+  const unbracketed = ip.startsWith("[") && ip.endsWith("]") ? ip.slice(1, -1) : ip;
+  if (unbracketed.includes(":")) {
+    return isPrivateIpv6(unbracketed);
+  }
   if (ip === "169.254.169.254") return true;
   for (const range of PRIVATE_RANGES) {
     if (range.test(ip)) return true;
   }
+  return false;
+}
+
+function isPrivateIpv6(ip: string): boolean {
+  const lower = ip.toLowerCase();
+  if (lower === "::1" || lower === "0:0:0:0:0:0:0:1") return true;
+  if (lower === "::" || lower === "0:0:0:0:0:0:0:0") return true;
+  if (/^fe[89ab][0-9a-f]:/.test(lower)) return true;
+  if (/^f[cd][0-9a-f]{2}:/.test(lower)) return true;
+
+  const dottedMapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (dottedMapped) return isPrivateIp(dottedMapped[1]);
+
+  const hexMapped = lower.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hexMapped) {
+    const hi = parseInt(hexMapped[1], 16);
+    const lo = parseInt(hexMapped[2], 16);
+    const addr = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+    return isPrivateIp(addr);
+  }
+
   return false;
 }
 
