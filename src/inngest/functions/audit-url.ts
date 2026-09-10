@@ -98,6 +98,22 @@ export const auditUrl = inngest.createFunction(
     const gates = resolveModuleGates(moduleIds);
     const coveredScIds = getModuleWcagCoverage(moduleIds);
 
+    // Cancel guard, same family as cancel-check-${i} and cancel-check-final
+    // below, but for the gap those two don't cover: a queued audit can be
+    // cancelled (status -> "failed"/CANCELLED) before this function's first
+    // step ever runs. Without this check, the unconditional
+    // updateAuditStatus(auditId, "running") right below resurrected it —
+    // confirmed live: cancel a queued audit, watch it go running -> complete
+    // anyway, findings the user explicitly stopped generated and persisted
+    // regardless, with the DB row left at a permanently contradictory
+    // status:"complete" + error_code:"CANCELLED".
+    const initialStatus = await step.run("cancel-check-initial", async () => {
+      return (await getAudit(auditId)).status;
+    });
+    if (initialStatus !== "queued" && initialStatus !== "running") {
+      return { auditId, status: initialStatus };
+    }
+
     await step.run("crawl", async () => {
       await updateAuditStatus(auditId, "running");
       const outcome = await withDeadline(crawl(url, MAX_PAGES), CRAWL_TIMEOUT_MS);
