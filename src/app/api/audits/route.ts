@@ -124,21 +124,32 @@ export async function DELETE(request: Request) {
       return Response.json({ error: "id query parameter is required" }, { status: 400 });
     }
 
-    if (!auth.ok) {
-      // Anonymous path: verify the audit belongs to this IP first.
-      let row;
-      try {
-        row = await getAudit(id);
-      } catch {
-        // getAudit throws when the row doesn't exist — that's a 404, not 500.
-        return Response.json({ error: "Audit not found" }, { status: 404 });
-      }
-      if (!ip || row.created_ip !== ip) {
-        return Response.json(
-          { error: "Missing or invalid authorization header" },
-          { status: 401 }
-        );
-      }
+    // Ownership check for BOTH branches, same three-way rule as
+    // cancel/route.ts: an owned audit requires an exact created_by match; an
+    // anonymous audit (created_by null) falls back to IP, whether or not the
+    // caller happens to be signed in now (lets someone cancel/delete an
+    // audit they ran before logging in). This used to run only when
+    // `!auth.ok` — a signed-in caller (a real, valid Bearer token) skipped
+    // it entirely and could delete any OTHER user's audit by id with no
+    // ownership check at all, a plain IDOR on a destructive action. Audit
+    // ids are UUIDs (not enumerable by guessing), but they do appear in
+    // shareable URLs and API responses, so "not guessable" is not the same
+    // as "never observed by someone else."
+    let row;
+    try {
+      row = await getAudit(id);
+    } catch {
+      // getAudit throws when the row doesn't exist — that's a 404, not 500.
+      return Response.json({ error: "Audit not found" }, { status: 404 });
+    }
+    const isOwner = row.created_by
+      ? auth.ok && row.created_by === auth.userId
+      : !!ip && row.created_ip === ip;
+    if (!isOwner) {
+      return Response.json(
+        { error: "Missing or invalid authorization header" },
+        { status: 401 }
+      );
     }
 
     const deleted = await deleteAudit(id);

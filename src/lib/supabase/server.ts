@@ -256,15 +256,25 @@ export async function getRecentAudits(
   // Isolation: users only see their own audits (by owner id). Signed-in
   // users are matched by owner id ONLY — matching by IP too would leak
   // anyone else's anonymous audits run from the same shared IP (office
-  // Wi-Fi, VPN, CGNAT) into a teammate's own "Recent Audits" list, which is
-  // exactly what an IP-based OR clause did here before. Anonymous
+  // Wi-Fi, VPN, CGNAT) into a teammate's own "Recent Audits" list. Anonymous
   // (unauthenticated) requesters have no owner id to match on, so they
   // still fall back to IP — that's an inherent limitation of the
   // no-login free tier, not something scoped to a signed-in account.
+  //
+  // The anonymous branch used to be a single .or() string whose first
+  // alternative was `created_ip.eq.${ip}` with NO created_by restriction —
+  // a strict superset of the intended `created_by IS NULL AND created_ip =
+  // ip`, so it matched (and returned) every OWNED audit from that IP too.
+  // Anyone on a shared network could see a signed-in teammate's full audit
+  // list. Chaining .eq()/.is() composes as AND with no raw string
+  // interpolation, closing both the leak and the (harmless today, since
+  // getClientIp returns a clean address, but needless) filter-string
+  // injection surface of interpolating `ip` directly into a PostgREST
+  // filter expression.
   if (scope?.userId) {
     query = query.eq("created_by", scope.userId);
   } else if (scope?.ip) {
-    query = query.or(`created_ip.eq.${scope.ip},and(created_by.is.null,created_ip.eq.${scope.ip})`);
+    query = query.eq("created_ip", scope.ip).is("created_by", null);
   } else {
     query = query.eq("created_by", "00000000-0000-0000-0000-000000000000");
   }
