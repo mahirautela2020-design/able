@@ -126,4 +126,30 @@ describe.each([
     );
     expect(res.status).toBe(401);
   });
+
+  // Gap in the four cases above: none of them cover an OWNED audit
+  // (created_by set, e.g. to "user-1" — see the default getAudit mock)
+  // reached by an UNAUTHENTICATED caller from the SAME IP the owner used
+  // to create it. The route's isOwner check switches on `auth.ok` first --
+  //   auth.ok ? (created_by ? created_by===userId : ip-match) : ip-match
+  // -- so when auth.ok is false, it falls straight to an IP match with no
+  // regard for created_by being set. That lets an anonymous request from a
+  // shared IP (office/VPN/CGNAT — or a spoofed X-Forwarded-For, see
+  // src/lib/http.ts getClientIp) read a signed-in stranger's private
+  // report/transcript with zero authentication. The correct rule (already
+  // used by DELETE /api/audits, src/app/api/audits/route.ts:145) is to gate
+  // on created_by FIRST: an owned audit must always require an
+  // authenticated created_by match, and IP fallback should apply only when
+  // created_by is null.
+  it("regression: must reject an unauthenticated caller for an OWNED audit even when their IP matches the creator IP", async () => {
+    requireSession.mockResolvedValue({
+      ok: false,
+      response: Response.json({ error: "no session" }, { status: 401 }),
+    });
+    const res = await handler(
+      makeRequest("/api/audits/audit-1", { "x-forwarded-for": "1.2.3.4" }),
+      { params: Promise.resolve({ id: "audit-1" }) }
+    );
+    expect(res.status).toBe(401);
+  });
 });

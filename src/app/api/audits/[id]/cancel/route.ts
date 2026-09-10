@@ -34,10 +34,17 @@ export async function POST(
 
     const auth = await requireSession(request);
     const reqIp = getClientIp(request);
-    const isOwner = auth.ok
-      ? auditRow.created_by
-        ? auditRow.created_by === auth.userId
-        : !!reqIp && auditRow.created_ip === reqIp
+    // Branch on the ROW first, not on whether the caller is authenticated.
+    // The previous `auth.ok ? (...) : ip-match` shape fell straight to an
+    // IP match whenever the caller sent no/an invalid token -- even for an
+    // audit that IS owned (created_by set). An unauthenticated request from
+    // a matching IP (shared office/VPN/CGNAT network, or a spoofable
+    // X-Forwarded-For) could act on a signed-in stranger's audit with zero
+    // authentication. An owned audit now always requires an authenticated,
+    // exact created_by match; only a genuinely anonymous audit falls back
+    // to IP, regardless of the caller's current auth state.
+    const isOwner = auditRow.created_by
+      ? auth.ok && auditRow.created_by === auth.userId
       : !!reqIp && auditRow.created_ip === reqIp;
     if (!isOwner) {
       return Response.json(

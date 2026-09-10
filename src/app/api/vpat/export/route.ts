@@ -1,13 +1,17 @@
-import { getFindingsForAudit } from "@/lib/supabase/server";
+import { getFindingsForAudit, getAudit } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
+import { getClientIp } from "@/lib/http";
 import { buildVPAT, vpatToCsv, vpatToJson } from "@/lib/vpat/builder";
 import type { Finding } from "@/engine/axe-scan";
 
 export async function GET(request: Request) {
-  // Auth guard: VPAT exports contain client findings (URLs, element HTML,
-  // evidence) — must not be readable without a valid session.
+  // requireSession only proves *a* session exists. The actual guard is the
+  // ownership check below -- without it, any signed-in caller could export
+  // full findings (rule ids, selectors, element_html, evidence) for ANY
+  // audit on the platform by supplying its id, not just their own.
   const auth = await requireSession(request);
   if (!auth.ok) return auth.response;
+  const ip = getClientIp(request);
 
   try {
     const { searchParams } = new URL(request.url);
@@ -18,6 +22,22 @@ export async function GET(request: Request) {
       return Response.json(
         { error: "auditId query parameter is required" },
         { status: 400 }
+      );
+    }
+
+    let auditRow;
+    try {
+      auditRow = await getAudit(auditId);
+    } catch {
+      return Response.json({ error: "Audit not found" }, { status: 404 });
+    }
+    const isOwner = auditRow.created_by
+      ? auth.ok && auditRow.created_by === auth.userId
+      : !!ip && auditRow.created_ip === ip;
+    if (!isOwner) {
+      return Response.json(
+        { error: "You don't have permission to export this audit" },
+        { status: 403 }
       );
     }
 

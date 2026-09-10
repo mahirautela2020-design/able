@@ -99,13 +99,28 @@ export async function verifyApiKey(key: string): Promise<ApiKeyRecord | null> {
   return record;
 }
 
-export async function revokeApiKey(id: string): Promise<void> {
-  const { error } = await supabase
+/**
+ * Revoke a key, scoped to the caller's org. The mutation used to filter
+ * only by `id` — `orgId` was read from the session and used for the audit
+ * log entry, never as part of the WHERE clause — so any org admin could
+ * revoke ANY other org's key by id, a cross-org IDOR. `.select("id")` after
+ * the update lets the caller tell "revoked" apart from "no key in your org
+ * matched that id" (zero rows updated) instead of a blanket success either
+ * way.
+ */
+export async function revokeApiKey(
+  id: string,
+  orgId: string
+): Promise<{ revoked: boolean }> {
+  const { data, error } = await supabase
     .from("api_keys")
     .update({ revoked_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("org_id", orgId)
+    .select("id");
 
   if (error) throw error;
+  return { revoked: (data?.length ?? 0) > 0 };
 }
 
 export async function listApiKeys(orgId: string): Promise<Omit<ApiKeyRecord, "key_hash">[]> {

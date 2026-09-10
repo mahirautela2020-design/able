@@ -70,7 +70,14 @@ export async function DELETE(request: Request) {
       return Response.json({ error: "keyId is required" }, { status: 400 });
     }
 
-    await revokeApiKey(keyId);
+    const { revoked } = await revokeApiKey(keyId, auth.session.orgId);
+    if (!revoked) {
+      // Either the key never existed, or it belongs to a different org --
+      // scoping the mutation itself is what closed the cross-org IDOR
+      // (see revokeApiKey), so this branch covers both without leaking
+      // which case it was.
+      return Response.json({ error: "API key not found" }, { status: 404 });
+    }
 
     await recordAuditLog({
       actor: auth.session.userId,

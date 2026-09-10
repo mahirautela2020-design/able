@@ -2,8 +2,9 @@ import { runDynamicAudit } from "@/lib/android/dynamic";
 import type { DynamicScreen } from "@/lib/android/dynamic";
 import type { DynamicFinding } from "@/lib/android/dynamic-checks";
 import { parseApkManifestFromBuffer } from "@/lib/android/manifest";
-import { supabase, uploadEvidence } from "@/lib/supabase/server";
+import { supabase, uploadEvidence, getAudit } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
+import { getClientIp } from "@/lib/http";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,9 +36,14 @@ export function sanitizeFilename(name: string): string {
 }
 
 export async function POST(request: Request) {
-  // Auth guard: uploading to someone else's audit storage must require a session.
+  // requireSession only proves *a* session exists, not that it's this
+  // audit's owner -- the actual guard is the ownership check below, once
+  // auditId is in hand. (A "session is enough" comment used to sit here;
+  // it was wrong, matching the bug class fixed across the /audits/[id]/*
+  // routes -- see cancel/route.ts.)
   const auth = await requireSession(request);
   if (!auth.ok) return auth.response;
+  const ip = getClientIp(request);
 
   try {
     const contentType = request.headers.get("content-type") || "";
@@ -55,6 +61,34 @@ export async function POST(request: Request) {
 
     if (!auditId) {
       return Response.json({ error: "auditId is required" }, { status: 400 });
+    }
+
+    // mobile_artifacts.audit_id has a hard FK to audits(id) -- today no
+    // `audits` row is ever created for an APK/iOS submission (insertAudit
+    // is only called from the URL and PDF-init routes), so this insert
+    // silently fails downstream for a brand-new client-generated id (a
+    // pre-existing, separate functional gap, not addressed here). What
+    // MUST be rejected here is the exploitable case: `auditId` referencing
+    // an audit that DOES already exist (created via URL/PDF/a prior
+    // upload) and belongs to someone else -- without this check, any
+    // signed-in caller could attach fabricated Android findings, or an
+    // arbitrary file, to a stranger's real audit.
+    let existing: Awaited<ReturnType<typeof getAudit>> | null = null;
+    try {
+      existing = await getAudit(auditId);
+    } catch {
+      existing = null; // no row yet -- fine, this is the common case today
+    }
+    if (existing) {
+      const isOwner = existing.created_by
+        ? auth.ok && existing.created_by === auth.userId
+        : !!ip && existing.created_ip === ip;
+      if (!isOwner) {
+        return Response.json(
+          { error: "You don't have permission to upload to this audit" },
+          { status: 403 }
+        );
+      }
     }
 
     if (!file.name.endsWith(".apk")) {

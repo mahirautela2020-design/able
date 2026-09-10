@@ -1,8 +1,9 @@
 import { parseIpa, IpaParseError } from "@/lib/ios/ipa";
 import { runIosChecks } from "@/lib/ios/checks";
 import { IOS_GUIDED_CHECKLIST } from "@/lib/ios/guided-checklist";
-import { supabase, uploadEvidence } from "@/lib/supabase/server";
+import { supabase, uploadEvidence, getAudit } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
+import { getClientIp } from "@/lib/http";
 
 const MAX_IPA_SIZE_MB = 200;
 
@@ -23,6 +24,7 @@ function sanitizeFilename(name: string): string {
 export async function POST(request: Request) {
   const auth = await requireSession(request);
   if (!auth.ok) return auth.response;
+  const ip = getClientIp(request);
 
   try {
     const contentType = request.headers.get("content-type") || "";
@@ -40,6 +42,28 @@ export async function POST(request: Request) {
 
     if (!auditId) {
       return Response.json({ error: "auditId is required" }, { status: 400 });
+    }
+
+    // See src/app/api/uploads/apk/route.ts for the full explanation: reject
+    // only when `auditId` already refers to an existing audit owned by
+    // someone else -- a brand-new client-generated id has no row yet and
+    // is the common case today.
+    let existing: Awaited<ReturnType<typeof getAudit>> | null = null;
+    try {
+      existing = await getAudit(auditId);
+    } catch {
+      existing = null;
+    }
+    if (existing) {
+      const isOwner = existing.created_by
+        ? auth.ok && existing.created_by === auth.userId
+        : !!ip && existing.created_ip === ip;
+      if (!isOwner) {
+        return Response.json(
+          { error: "You don't have permission to upload to this audit" },
+          { status: 403 }
+        );
+      }
     }
 
     if (!file.name.endsWith(".ipa")) {

@@ -7,6 +7,7 @@ import { captureNvdaAnnouncements } from "@/lib/sr/nvda-snapshot";
 import { runNvdaChecks } from "@/lib/sr/nvda-checks";
 import { getAudit } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
+import { getClientIp } from "@/lib/http";
 
 // Single-instance NVDA guard: concurrent runs collide on the named pipe
 // (RISKS §7). In-process mutex keyed by audit id; fleet-level control is out
@@ -27,6 +28,7 @@ export async function POST(
 ) {
   const auth = await requireSession(request);
   if (!auth.ok) return auth.response;
+  const ip = getClientIp(request);
 
   const { id } = await params;
 
@@ -53,6 +55,20 @@ export async function POST(
         audit = await getAudit(id);
       } catch {
         return Response.json({ error: "Audit not found" }, { status: 404 });
+      }
+
+      // Owner-scoped like report/pdf/sr-preview/contrast-finding — this
+      // triggers a real local NVDA run against target_url and returns its
+      // transcript, so a missing check here let any signed-in caller
+      // trigger that against a stranger's audit and read back the result.
+      const isOwner = audit.created_by
+        ? auth.ok && audit.created_by === auth.userId
+        : !!ip && audit.created_ip === ip;
+      if (!isOwner) {
+        return Response.json(
+          { error: "You don't have permission to run this audit" },
+          { status: 403 }
+        );
       }
 
       // The target was already SSRF-validated at creation; re-validate before

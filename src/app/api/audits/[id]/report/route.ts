@@ -39,10 +39,12 @@ export async function GET(
 
     const auth = await requireSession(request);
     const reqIp = getClientIp(request);
-    const isOwner = auth.ok
-      ? auditRow.created_by
-        ? auditRow.created_by === auth.userId
-        : !!reqIp && auditRow.created_ip === reqIp
+    // Branch on the ROW first, not on whether the caller is authenticated —
+    // see cancel/route.ts for the full explanation. An owned audit always
+    // requires an authenticated, exact created_by match; only a genuinely
+    // anonymous audit falls back to IP.
+    const isOwner = auditRow.created_by
+      ? auth.ok && auditRow.created_by === auth.userId
       : !!reqIp && auditRow.created_ip === reqIp;
     if (!isOwner) {
       return Response.json(

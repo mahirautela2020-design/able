@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { buildAccessibilityTree } from "@/lib/android/accessibility-tree";
 import type { AndroidAccessibilityTree } from "@/lib/android/accessibility-tree";
+import { authHeaders } from "@/lib/supabase/client";
 
 interface MobileSimulatorProps {
   auditId: string;
@@ -16,7 +17,11 @@ export function MobileSimulator({ auditId, pageId }: MobileSimulatorProps) {
   useEffect(() => {
     async function loadTree() {
       try {
-        const res = await fetch(`/api/audits/${auditId}`);
+        // The route is now owner-scoped (was previously readable by
+        // anyone with the id) -- send the session token so a signed-in
+        // owner still gets their real data instead of the demo fallback.
+        const headers = await authHeaders();
+        const res = await fetch(`/api/audits/${auditId}`, { headers });
         if (!res.ok) {
           const fallbackTree = buildAccessibilityTree("com.example.app", "MainActivity", {
             activities: ["com.example.app.HomeActivity", "com.example.app.SettingsActivity"],

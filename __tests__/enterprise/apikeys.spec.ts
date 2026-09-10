@@ -147,16 +147,43 @@ describe("apikeys", () => {
   });
 
   describe("revokeApiKey", () => {
-    it("updates revoked_at timestamp", async () => {
-      const updateMock = vi.fn().mockReturnValue({
-        eq: vi.fn().mockResolvedValue({ error: null }),
-      });
+    it("updates revoked_at timestamp, scoped to id AND org_id", async () => {
+      const eqCalls: Array<[string, unknown]> = [];
+      const chain = {
+        eq: vi.fn((col: string, val: unknown) => {
+          eqCalls.push([col, val]);
+          return chain;
+        }),
+        select: vi.fn().mockResolvedValue({ data: [{ id: "key-1" }], error: null }),
+      };
+      const updateMock = vi.fn().mockReturnValue(chain);
       mockSupabase.from.mockReturnValue({
         update: updateMock,
       } as unknown as ReturnType<typeof mockSupabase.from>);
 
       const { revokeApiKey } = await import("@/lib/enterprise/apikeys");
-      await expect(revokeApiKey("key-1")).resolves.not.toThrow();
+      const result = await revokeApiKey("key-1", "org-1");
+
+      expect(result.revoked).toBe(true);
+      // Cross-org IDOR regression: the mutation must filter by BOTH id and
+      // org_id, not id alone (see revokeApiKey's own comment for why).
+      expect(eqCalls).toContainEqual(["id", "key-1"]);
+      expect(eqCalls).toContainEqual(["org_id", "org-1"]);
+    });
+
+    it("reports revoked:false when no row matches (wrong org, or key doesn't exist)", async () => {
+      const chain = {
+        eq: vi.fn(() => chain),
+        select: vi.fn().mockResolvedValue({ data: [], error: null }),
+      };
+      mockSupabase.from.mockReturnValue({
+        update: vi.fn().mockReturnValue(chain),
+      } as unknown as ReturnType<typeof mockSupabase.from>);
+
+      const { revokeApiKey } = await import("@/lib/enterprise/apikeys");
+      const result = await revokeApiKey("key-owned-by-another-org", "org-1");
+
+      expect(result.revoked).toBe(false);
     });
   });
 });

@@ -12,6 +12,11 @@ describe("GET /api/audits/[id] stale-audit recovery", () => {
       status: "failed",
       error_code: "STALE_EXECUTION",
       error_detail: "No progress for over 10 minutes",
+      // Anonymous audit + matching IP -- the route is now owner-scoped;
+      // this satisfies the anonymous-fallback branch so the test keeps
+      // exercising the staleness-recovery behavior it's actually about.
+      created_by: null,
+      created_ip: "1.2.3.4",
     }));
     const getFindingsForAudit = vi.fn(async () => []);
 
@@ -20,6 +25,7 @@ describe("GET /api/audits/[id] stale-audit recovery", () => {
       getFindingsForAudit,
       failStaleRunningAudits,
     }));
+    vi.doMock("@/lib/http", () => ({ getClientIp: () => "1.2.3.4" }));
 
     const { GET } = await import("@/app/api/audits/[id]/route");
     const res = await GET(new Request("http://localhost/api/audits/audit-1"), {
@@ -42,7 +48,12 @@ describe("GET /api/audits/[id] stale-audit recovery", () => {
     const failStaleRunningAudits = vi.fn(async () => {
       throw new Error("db unavailable");
     });
-    const getAudit = vi.fn(async () => ({ id: "audit-1", status: "running" }));
+    const getAudit = vi.fn(async () => ({
+      id: "audit-1",
+      status: "running",
+      created_by: null,
+      created_ip: "1.2.3.4",
+    }));
     const getFindingsForAudit = vi.fn(async () => []);
 
     vi.doMock("@/lib/supabase/server", () => ({
@@ -50,6 +61,7 @@ describe("GET /api/audits/[id] stale-audit recovery", () => {
       getFindingsForAudit,
       failStaleRunningAudits,
     }));
+    vi.doMock("@/lib/http", () => ({ getClientIp: () => "1.2.3.4" }));
 
     const { GET } = await import("@/app/api/audits/[id]/route");
     const res = await GET(new Request("http://localhost/api/audits/audit-1"), {

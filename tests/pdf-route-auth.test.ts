@@ -137,4 +137,27 @@ describe("pdf route — owner-scoped auth (regression: any valid session could d
     );
     expect(res.status).toBe(200);
   });
+
+  // The four cases above never exercise an OWNED audit (created_by:
+  // "user-1", the default `auditRow`) reached by an UNAUTHENTICATED
+  // caller whose IP happens to equal the creator IP. isOwner here switches
+  // on `auth.ok` first: `auth.ok ? (created_by ? ===userId : ip-match) :
+  // ip-match` -- so an unauthenticated request skips the created_by check
+  // entirely and falls straight to IP match, letting anyone on the same
+  // network (or with a spoofed X-Forwarded-For -- see getClientIp in
+  // src/lib/http.ts) download a signed-in stranger's PDF report with no
+  // authentication at all. Correct behavior (DELETE /api/audits,
+  // src/app/api/audits/route.ts:145) gates on created_by FIRST: an owned
+  // audit must always require an authenticated created_by match.
+  it("regression: must reject an unauthenticated caller for an OWNED audit even when their IP matches the creator IP", async () => {
+    requireSession.mockResolvedValue({
+      ok: false,
+      response: Response.json({ error: "no session" }, { status: 401 }),
+    });
+    const res = await pdfGet(
+      makeRequest("/api/audits/audit-1/pdf", { "x-forwarded-for": "1.2.3.4" }),
+      { params: Promise.resolve({ id: "audit-1" }) }
+    );
+    expect(res.status).toBe(401);
+  });
 });

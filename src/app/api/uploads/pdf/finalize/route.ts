@@ -65,10 +65,10 @@ export async function POST(request: Request) {
       return Response.json({ error: "Not a PDF audit" }, { status: 400 });
     }
 
-    const isOwner = auth.ok
-      ? audit.created_by
-        ? audit.created_by === auth.userId
-        : !!ip && audit.created_ip === ip
+    // Branch on the ROW first, not on whether the caller is authenticated —
+    // see src/app/api/audits/[id]/cancel/route.ts for the full explanation.
+    const isOwner = audit.created_by
+      ? auth.ok && audit.created_by === auth.userId
       : !!ip && audit.created_ip === ip;
     if (!isOwner) {
       return Response.json(
