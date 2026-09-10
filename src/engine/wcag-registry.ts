@@ -17,6 +17,21 @@ export function getScById(
   return WCAG_REGISTRY.find((sc) => sc.id === id);
 }
 
+/** axe-core's own *level* tags — as opposed to SC-specific tags, which are
+ * digits-only ("wcag241") and must never be matched by a prefix check
+ * against these (see the comment in deriveRuleMappings). */
+const LEVEL_TAGS = new Set([
+  "wcag2a",
+  "wcag2aa",
+  "wcag2aaa",
+  "wcag21a",
+  "wcag21aa",
+  "wcag21aaa",
+  "wcag22a",
+  "wcag22aa",
+  "wcag22aaa",
+]);
+
 export function deriveRuleMappings(): Map<string, string[]> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const axe = require("axe-core");
@@ -46,9 +61,14 @@ export function deriveRuleMappings(): Map<string, string[]> {
       .filter(
         (t: string) =>
           (t.startsWith("wcag") || t.startsWith("section508")) &&
-          !t.startsWith("wcag2") &&
-          !t.startsWith("wcag21") &&
-          !t.startsWith("wcag22")
+          // Drop axe's *level* tags ("wcag2aa", "wcag21a", "wcag22aaa", ...)
+          // by exact match, not by prefix. A prefix check like
+          // `!t.startsWith("wcag2")` also matches every Principle-2
+          // (Operable) SC-specific tag -- "wcag241" (2.4.1 Bypass Blocks),
+          // "wcag211" (2.1.1 Keyboard), "wcag221" (2.2.1 Timing Adjustable)
+          // all start with "wcag2"/"wcag21"/"wcag22" too -- so it silently
+          // discarded 11 real SCs' mappings along with the level tags.
+          !LEVEL_TAGS.has(t)
       )
       .map(normalizeTag);
 

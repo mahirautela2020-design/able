@@ -152,9 +152,13 @@ export function extractFindings(
 }
 
 export function extractWcagLevel(tags: string[]): string | null {
+  // Check "aaa" before "aa": "wcag2aaa" contains "aa" as a substring of
+  // "aaa", so checking the AA branch first mislabels every AAA-tagged rule
+  // (color-contrast-enhanced, identical-links-same-purpose,
+  // meta-refresh-no-exceptions in axe-core today) as "AA".
   for (const tag of tags) {
-    if (tag.includes("aa")) return "AA";
     if (tag.includes("aaa")) return "AAA";
+    if (tag.includes("aa")) return "AA";
     if (tag.includes("a")) return "A";
   }
   return null;

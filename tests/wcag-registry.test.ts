@@ -82,6 +82,26 @@ describe("wcag-registry", () => {
     expect(mappings.get("color-contrast-enhanced")).toContain("1.4.6");
   });
 
+  it("regression: deriveRuleMappings keeps Principle-2 SC-specific tags (they share a prefix with the level tags)", () => {
+    // The level-tag exclusion used to be `!t.startsWith("wcag2") &&
+    // !t.startsWith("wcag21") && !t.startsWith("wcag22")`, meant to drop
+    // "wcag2aa"/"wcag21a"/"wcag22aa" etc. But every Principle-2 (Operable)
+    // SC-specific tag ALSO starts with those same literal prefixes --
+    // "wcag241" (2.4.1) starts with "wcag2", "wcag211" (2.1.1) starts with
+    // "wcag21", "wcag221" (2.2.1) starts with "wcag22" -- so the prefix
+    // check silently discarded them too, and 11 real SCs (2.1.1, 2.1.3,
+    // 2.2.1, 2.2.2, 2.2.4, 2.4.1, 2.4.2, 2.4.4, 2.4.9, 2.5.3, 2.5.8) could
+    // never resolve from an axe violation to a dotted SC id, even though
+    // axe-core genuinely tests every one of them.
+    const mappings = deriveRuleMappings();
+    expect(mappings.get("bypass")).toContain("2.4.1"); // Bypass Blocks
+    expect(mappings.get("document-title")).toContain("2.4.2"); // Page Titled
+    expect(mappings.get("link-name")).toContain("2.4.4"); // Link Purpose (In Context)
+    expect(mappings.get("identical-links-same-purpose")).toContain("2.4.9"); // Link Purpose (Link Only)
+    expect(mappings.get("target-size")).toContain("2.5.8"); // Target Size Minimum
+    expect(mappings.get("frame-focusable-content")).toContain("2.1.1"); // Keyboard
+  });
+
   it("normalizeTag converts an axe-style tag to the registry's dotted id", () => {
     expect(normalizeTag("wcag143")).toBe("1.4.3");
     expect(normalizeTag("wcag1411")).toBe("1.4.11");
@@ -102,5 +122,18 @@ describe("wcag-registry", () => {
     expect(ids.length).toBeGreaterThan(0);
     expect(ids.length).toBeLessThan(automatableCount);
     expect(ids).toContain("1.4.3");
+  });
+
+  it("regression: axeCoveredScIds includes Principle-2 SCs axe-core actually tests", () => {
+    // AUDIT_MODULES (src/lib/audit-modules.ts) advertises this set as "all
+    // automatable WCAG 2.2 success criteria" and it gates which SCs
+    // computeComplianceMatrix is allowed to mark "automated-pass" -- if a
+    // covered SC is missing here, a page that genuinely passes it (e.g. has
+    // a skip link, so "bypass" reports no violation) stays stuck at
+    // "manual"/"not tested" forever instead of "automated-pass".
+    const ids = axeCoveredScIds();
+    for (const sc of ["2.1.1", "2.2.1", "2.4.1", "2.4.2", "2.4.4", "2.4.9", "2.5.8"]) {
+      expect(ids).toContain(sc);
+    }
   });
 });
