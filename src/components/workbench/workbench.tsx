@@ -124,6 +124,13 @@ export function Workbench({
   const [progress, setProgress] = useState<Record<string, unknown> | null>(null);
   const [fastPreview, setFastPreview] = useState<FastPreview | null>(null);
   const [stopping, setStopping] = useState(false);
+  // The page can no longer safely server-render target_url for an owned
+  // audit (see src/app/workbench/[auditId]/page.tsx) -- `targetUrl` arrives
+  // empty in that case and this hydrates from the owner-scoped report
+  // route's very first response instead. For an anonymous/IP-matched audit
+  // the prop already carries the real value, so this is a same-value
+  // no-op there.
+  const [liveTargetUrl, setLiveTargetUrl] = useState(targetUrl);
 
   // Draggable left-column width (like Claude's split-pane resize). Persisted
   // across sessions so a user's preferred layout sticks. Clamped so the
@@ -155,16 +162,32 @@ export function Workbench({
   // iframe (right column) so the left-column tools can act on it.
   const ctrl = useExplore({
     iframeRef,
-    targetUrl,
+    targetUrl: liveTargetUrl,
     auditId,
     enabled: !isPdf && activeTab === "inspect",
   });
 
-  // Live-poll while the audit is queued/running so the checklist fills in
-  // as pages finish. Stops once complete/failed. Also ticks the clock so
-  // the ETA stays fresh (async context — legal setState).
+  // First real value seen after hydration seeds urlDraft too -- only when
+  // urlDraft is still the pre-hydration empty placeholder, so this never
+  // clobbers something the user has actually typed. Same deliberate
+  // exception as the leftWidth effect above: syncing from a value that can
+  // only be known after mount.
   useEffect(() => {
-    if (status !== "queued" && status !== "running") return;
+    if (liveTargetUrl && !urlDraft) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setUrlDraft(liveTargetUrl);
+    }
+  }, [liveTargetUrl, urlDraft]);
+
+  // Live-poll while the audit is queued/running so the checklist fills in
+  // as pages finish, and always fire once on mount regardless of status —
+  // landing directly on an already-complete OWNED audit now arrives with
+  // no server-rendered data at all (page.tsx can't prove ownership without
+  // a cookie session — see its comment), so this fetch through the
+  // owner-scoped report route is what actually populates the view for the
+  // real owner. Stops recurring once complete/failed. Also ticks the clock
+  // so the ETA stays fresh (async context — legal setState).
+  useEffect(() => {
     let stopped = false;
 
     const tick = async () => {
@@ -183,6 +206,7 @@ export function Workbench({
         setErrorCode(json.audit?.error_code ?? null);
         setProgress(json.audit?.progress ?? null);
         setFastPreview(json.audit?.fast_preview ?? null);
+        if (json.audit?.target_url) setLiveTargetUrl(json.audit.target_url);
         if (Array.isArray(json.findings)) setLiveFindings(json.findings);
       } catch {
         // transient — keep polling
@@ -190,6 +214,7 @@ export function Workbench({
     };
 
     tick();
+    if (status !== "queued" && status !== "running") return;
     const interval = setInterval(tick, 4000);
     return () => {
       stopped = true;
@@ -272,7 +297,8 @@ export function Workbench({
       try {
         // Reset per target/preview reload (async context — legal setState).
         setFrameBlocked(false);
-        const res = await fetch(`/api/preview-check?url=${encodeURIComponent(targetUrl)}`);
+        if (!liveTargetUrl) return; // pre-hydration placeholder — nothing to check yet
+        const res = await fetch(`/api/preview-check?url=${encodeURIComponent(liveTargetUrl)}`);
         if (!res.ok) return;
         const json = await res.json();
         if (!cancelled && json.blocked) setFrameBlocked(true);
@@ -283,7 +309,7 @@ export function Workbench({
     return () => {
       cancelled = true;
     };
-  }, [targetUrl, previewKey, isPdf]);
+  }, [liveTargetUrl, previewKey, isPdf]);
 
   // First available full-page screenshot (captured during the audit) —
   // used as the preview when the site blocks iframing.
@@ -371,7 +397,7 @@ export function Workbench({
   // navigate to its workbench.
   async function handleRerun(urlOverride?: string) {
     if (rerunning) return;
-    const url = (urlOverride || urlDraft || targetUrl).trim();
+    const url = (urlOverride || urlDraft || liveTargetUrl).trim();
     if (!url) return;
     setRerunning(true);
     try {
@@ -815,7 +841,7 @@ export function Workbench({
                 </ol>
               </div>
             ) : (
-              <ScreenReaderPanel auditId={auditId} targetUrl={targetUrl} />
+              <ScreenReaderPanel auditId={auditId} targetUrl={liveTargetUrl} />
             )}
           </div>
         )}
@@ -863,10 +889,10 @@ export function Workbench({
       {/* ── RIGHT: live preview + findings ── */}
       <main className="flex-1 flex flex-col min-w-0">
         {isPdf ? (
-          <PdfPreviewPane fileName={targetUrl} previewUrl={pdfPreviewUrl} />
+          <PdfPreviewPane fileName={liveTargetUrl} previewUrl={pdfPreviewUrl} />
         ) : (
           <PreviewPane
-            targetUrl={targetUrl}
+            targetUrl={liveTargetUrl}
             previewKey={previewKey}
             iframeRef={iframeRef}
             interactive={activeTab === "inspect"}
@@ -881,7 +907,7 @@ export function Workbench({
             rerunning={rerunning}
             onSubmitUrl={() => {
               setEditingUrl(false);
-              if (urlDraft.trim() !== targetUrl) requestRerun();
+              if (urlDraft.trim() !== liveTargetUrl) requestRerun();
             }}
             onReload={() => setPreviewKey((k) => k + 1)}
           />
