@@ -1,5 +1,5 @@
 import { sanitizeUrl, validateHost } from "@/engine/crawl";
-import { insertAudit, getRecentAudits, deleteAudit, countAuditsByIp, getAudit } from "@/lib/supabase/server";
+import { insertAudit, getRecentAudits, deleteAudit, countAuditsByIp, getAudit, updateAuditStatus } from "@/lib/supabase/server";
 import { requireSession } from "@/lib/supabase/session";
 import { getClientIp } from "@/lib/http";
 import { inngest } from "@/inngest/client";
@@ -67,17 +67,42 @@ export async function POST(request: Request) {
       ip,
     });
 
-    await inngest.send({
-      name: "audit/url",
-      data: moduleIds ? { auditId, url, modules: moduleIds } : { auditId, url },
-    });
+    // insertAudit above already created the row -- if queueing the real
+    // scan fails now (e.g. no local Inngest dev server running, or a
+    // genuine outage), that row was otherwise left stuck at "queued"
+    // forever: never picked up, never self-healed (failStaleRunningAudits
+    // only rescues "running", not "queued"), and it silently still counted
+    // against the caller's daily anonymous limit for a scan that never
+    // started. Mark it failed immediately and say so honestly instead of
+    // a bare "Internal server error".
+    try {
+      await inngest.send({
+        name: "audit/url",
+        data: moduleIds ? { auditId, url, modules: moduleIds } : { auditId, url },
+      });
+    } catch (e) {
+      console.error("POST /api/audits: failed to queue audit/url", e);
+      await updateAuditStatus(auditId, "failed", {
+        error_code: "QUEUE_UNAVAILABLE",
+        error_detail: e instanceof Error ? e.message : String(e),
+      }).catch(() => {
+        // best-effort — nothing further to do if this write also fails
+      });
+      return Response.json(
+        { error: "Couldn't start the audit — the background worker is unavailable right now. Try again shortly.", id: auditId },
+        { status: 503 }
+      );
+    }
 
     // Best-effort fast preview (Lighthouse via Google PSI) -- independent
-    // event/function, never blocks or is blocked by the real audit above.
-    await inngest.send({
-      name: "audit/psi-preview",
-      data: { auditId, url },
-    });
+    // event/function, genuinely never blocks or is blocked by the real
+    // audit above: unlike the send above, a failure here must not fail the
+    // whole request or leave a real audit un-created over a preview.
+    await inngest
+      .send({ name: "audit/psi-preview", data: { auditId, url } })
+      .catch((e) => {
+        console.error("POST /api/audits: failed to queue audit/psi-preview", e);
+      });
 
     return Response.json({ id: auditId }, { status: 201 });
   } catch (e) {
