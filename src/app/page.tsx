@@ -306,7 +306,7 @@ export default function Home() {
         <div className="grid gap-x-12 gap-y-12 lg:grid-cols-12">
           <div className="lg:col-span-7">
             <h1 className="text-[clamp(2.5rem,6.4vw,4.75rem)] font-semibold leading-[0.98] tracking-[-0.035em]">
-              {["Every failure,", "with the proof", "attached."].map((line) => (
+              {["Accessibility,", "audited. Proof", "attached."].map((line) => (
                 <span key={line} className="block overflow-hidden pb-[0.06em]">
                   <span data-anim="hero-line" className="block">
                     {line}

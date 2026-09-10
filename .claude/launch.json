@@ -7,6 +7,12 @@
       "runtimeArgs": ["run", "dev"],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "inngest-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "inngest:dev"],
+      "port": 8288
     }
   ]
 }
